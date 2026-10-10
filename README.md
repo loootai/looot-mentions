@@ -42,55 +42,140 @@ Cost of a typical run, one keyword on all six sources at list price: $0.00663. T
 
 Dropped, because looot has no provider for it: Facebook and Instagram posts by keyword, TikTok keyword search (providers exist, not wired here), podcasts, forums outside Reddit and Hacker News, review sites as a source, share of voice, influence scores and alerts on volume spikes.
 
-## Run it
+## What you need
 
-Three ways, one engine.
+- Node 22.13 or newer. The GitHub Actions workflow uses Node 22 and the checks below ran on Node 24.18. The repo has no `engines` field or `.nvmrc`; the floor comes from the dependencies (Next.js 16 needs 20.9, Vitest 5 needs 22.12, ESLint 10 needs 22.13 on the 22 line).
+- npm, which comes with Node.
+- For the demo and for `--dry-run`, nothing else. No account, no token, no network.
+- For a real run, a looot account and an agent token.
+  1. Sign up at https://looot.ai/auth/sign-up.
+  2. Get a token. Run `npm i -g looot` then `looot login`, which opens a browser approval. Or open the looot web app, go to Settings, "Agent tokens" and create one. See https://docs.looot.ai/get-started/sign-in.
+  3. With no browser (CI, a server), create the token in Settings, "Agent tokens", then `export LOOOT_TOKEN=...`.
+  4. The token needs the scopes `runs.execute`, `catalog.read`, `runs.read` and `usage.read`.
+  5. A run needs a funded balance. The minimum top-up is $5, and signing up adds no credit. See https://docs.looot.ai/money.
+- No Supabase, LLM key or other account. This repo does not use them.
+
+## Try it in one minute
 
 ```bash
-npm install
-npm run demo          # web UI with sample data on http://localhost:3232, no token, no network
-npm run mentions -- --demo
+git clone https://github.com/loootai/looot-mentions.git
+cd looot-mentions
+npm install --ignore-scripts
+npm run demo
 ```
 
-Headless CLI:
+Open http://localhost:3232. It shows sample data for invented brands, makes no looot call and needs no token. Stop it with Ctrl+C. The page answers HTTP 200.
+
+The same sample data from the command line. The output paths keep the demo files out of your real data.
 
 ```bash
-cp mentions.example.yaml mentions.yaml           # or pass --keywords "Acme,Acme Pro"
-npm run mentions -- --config mentions.yaml --dry-run      # prints the plan and the list-price cost, no call
-LOOOT_TOKEN=... npm run mentions -- --config mentions.yaml
+npm run mentions -- --demo --out digests-demo --data data/demo.json
 ```
 
-Options: `--sources reddit,news`, `--out digests`, `--data data/mentions.json`, `--rules config/rules.json`, `--max-spend <usd>`. Each run writes `digests/YYYY-MM-DD.md` with the new mentions and keeps every mention in `data/mentions.json`. The second run on a day appends to that day's digest.
+## Run it with your own data
 
-Web UI on live data: `LOOOT_TOKEN=... npm run dev`. It reads `data/mentions.json`. The Run page asks for a quote first (free), then searches for up to the quoted amount. Supabase is not used and no sign-in exists. Put the UI behind your own auth if you host it.
+The CLI reads the token from the shell environment. It does not load `.env.local`. For the web UI (`npm run dev`), Next.js loads `.env.local` for you.
 
-## Daily run on GitHub Actions
+```bash
+cp .env.example .env.local        # web UI only. For the CLI, export the variables instead.
+cp mentions.example.yaml mentions.yaml
+```
+
+Edit `mentions.yaml`: your brand and competitors as `keywords`, plus the optional `exclude` words, `sources`, `maxSpendPerRunUsd`, `monthlyCapUsd` and `maxAgeDays`. The file ships with invented names (Tallyroom, Ledgerly).
+
+Every environment variable the code reads:
+
+| Name | Required | What it does | Where to get it |
+| --- | --- | --- | --- |
+| `LOOOT_TOKEN` | For a real run, CLI or web UI. Not for `--demo` or `--dry-run`. | Agent token sent as `Authorization: Bearer`. | See "What you need". |
+| `LOOOT_API_URL` | No | Overrides the looot API base URL. Default `https://api.looot.ai`. | Leave unset. |
+| `MENTIONS_DATA` | No | File the web UI reads and writes. Default `data/mentions.json`. The CLI uses `--data` instead. | Your choice. |
+| `NEXT_PUBLIC_DEMO` | No | `1` switches the web UI to sample data. `npm run demo` sets it. | Set by the script. |
+| `GITHUB_STEP_SUMMARY` | No | Set by GitHub Actions. The CLI appends the digest to it. | Set by GitHub. |
+
+Price the run first. This reads the free public catalog for live prices when it can and falls back to the list prices in the code. It needs no token and makes no paid call:
+
+```
+$ npm run mentions -- --config mentions.yaml --dry-run
+Plan: 2 keyword(s) on 6 source(s), 12 calls, list price $0.01326 (list prices dated 2026-10-10). Cap $0.2500 a run, $5.00 a month.
+    2 x scrapecreators-reddit-search  $0.00188
+    2 x anyapi-run-twitter-search  $0.00075
+    4 x serper-search  $0.0010
+    2 x serper-news  $0.0010
+    2 x tikhub-api-youtube-web-search-video  $0.0010
+Dry run: no looot call was made and nothing was written.
+```
+
+Then the real run:
+
+```bash
+export LOOOT_TOKEN=...
+npm run mentions -- --config mentions.yaml
+```
+
+Options: `--keywords "Acme,Acme Pro"` instead of a config file, `--sources reddit,news`, `--out digests`, `--data data/mentions.json`, `--rules config/rules.json`, `--max-spend <usd>`.
+
+Results go to two places. `digests/YYYY-MM-DD.md` holds the new mentions, and a second run on the same day appends to it. `data/mentions.json` holds every mention seen and the spend per month. `data/` is gitignored; `digests/` is not.
+
+Web UI on your data: `npm run dev`, then open http://localhost:3000. It reads `data/mentions.json`. The Run page asks for a quote first (free), then searches for up to the quoted amount. There is no sign-in. Put the UI behind your own auth if you host it.
+
+## Spending
+
+- Every paid action shows a quote first. The CLI quotes with `--dry-run` and prints the same plan before a real run. The Run page shows the quote before its search button appears.
+- The run cap is `--max-spend` or `maxSpendPerRunUsd` in the config. The default is $0.25. A call that would pass the cap is skipped and never sent.
+- The month cap is `monthlyCapUsd`. The default is $5. The CLI checks it before the run starts, from the spend recorded in `data/mentions.json`, and stops with exit code 3 if the plan would pass it.
+- A typical run is one keyword on all six sources at list price, $0.00663. Two keywords cost $0.0133. Three keywords daily cost about $0.0199 a day, about $0.60 a month.
+- Each call carries an idempotency key made from the keyword, the call input, the endpoint and the day. A second run on the same day replays the stored run and charges nothing more.
+- A call still going when waiting stops (60 seconds) is "pending", not "failed", and the digest says so.
+- Failed calls are not charged by looot.
+
+## Deploy
+
+This app has no Supabase and no `vercel.json`. The web UI stores its data in a local file, so Vercel's read-only, per-request filesystem is a poor fit. The supported hosted setup is the daily GitHub Actions run below. To host the UI, run it on a machine with a disk: `npm run build && npm start`, with `LOOOT_TOKEN` in the environment and your own auth in front.
+
+### Daily run on GitHub Actions
 
 [.github/workflows/mentions.yml](.github/workflows/mentions.yml) runs at 06:23 UTC every day, writes the digest, and commits `digests/` and `data/`.
 
 1. Fork or copy this repo and commit your own `mentions.yaml`.
 2. Add the repository secret `LOOOT_TOKEN` (Settings, Secrets and variables, Actions).
-3. Run it once with "Run workflow" and tick `dry_run` to see the cost.
+3. Optional: set the repository variable `MENTIONS_CONFIG` (same page, Variables tab) to use a config file other than `mentions.yaml`.
+4. Run it once. Open the Actions tab, pick "mentions", click "Run workflow" and tick `dry_run` to see the cost. Or from a terminal, `gh workflow run mentions.yml -f dry_run=true`. Run it again with `dry_run` off for a real run.
 
-Until the secret exists the job ends with a notice and spends nothing. The workflow passes `actionlint` 1.7.12. The caps in the config file apply, so a run never passes `maxSpendPerRunUsd` and the job stops before any call when the month's spend would pass `monthlyCapUsd`.
+Until the secret exists the job ends with a notice ("LOOOT_TOKEN is not set, so nothing ran.") and spends nothing. The workflow passes `actionlint` 1.7.12. The caps in the config file apply, so a run never passes `maxSpendPerRunUsd` and the job stops before any call when the month's spend would pass `monthlyCapUsd`.
 
-## Money rules
+## Troubleshooting
 
-- The quote comes first: `--dry-run` in the CLI, and the Run page shows it before the search button appears.
-- The run cap is checked against list prices before each call. A call that would pass it is skipped and never sent.
-- The month cap is checked before the run starts, from the spend recorded in `data/mentions.json`.
-- Each call carries an idempotency key made from the keyword, the call input, the endpoint and the day. A second run on the same day replays the stored run and charges nothing more.
-- A call still going when waiting stops (60 seconds) is "pending", not "failed", and the digest says so. Failed calls are not charged by looot.
+| What you see | What it means | What to do |
+| --- | --- | --- |
+| `LOOOT_TOKEN is not set. Create an agent token at https://looot.ai/settings, or use --demo or --dry-run.` | The CLI found no token in the environment. | `export LOOOT_TOKEN=...` in the same shell. A `.env.local` file is not read by the CLI. |
+| `LOOOT_TOKEN is not set on the server.` (HTTP 503 from the Run page) | The web server started without the token. | Put `LOOOT_TOKEN` in `.env.local` and restart `npm run dev`. |
+| `looot returned HTTP 401`, or the message looot sends back, in the digest under "Sources that did not answer" as `failed (...)` | The token is wrong, revoked or missing a scope. | Create a new token with the four scopes listed above. |
+| `looot returned HTTP 402`, or the message looot sends back | The balance may be too low. The code shows whatever looot returns and does not interpret it. | Top up at https://docs.looot.ai/money (minimum $5), then run again. The idempotency key replays finished calls for free. |
+| `failed (blocked)` or `failed (stopped)`, or the run's own error message | looot blocked or stopped the run. | Open the run in the looot web app and read the reason. |
+| `still running at looot, not failed`, with `Still running when waiting stopped. Read run <runId> later.` | The provider took longer than 60 seconds. | Not a failure. Look the run up in looot by its id, or run again later. The same-day idempotency key returns the stored run. |
+| `The live price could not be read.` | The catalog price for that endpoint was unreadable, so the call was skipped. | Run again later. |
+| `The spend cap would be passed.` | The call was skipped because it would pass the run cap. | Raise `--max-spend` or `maxSpendPerRunUsd`. |
+| `The monthly cap of $5.00 would be passed. Nothing ran. Raise monthlyCapUsd to continue.` (exit code 3) | This month's spend plus the plan passes the cap. | Raise `monthlyCapUsd` or wait for the next month. |
+| A source shows 0 mentions and no error | The provider answered in a shape the parser does not recognise. The parsers do not raise an error for that; they return nothing. | Open an issue with the raw response (see below). |
+| `Every call failed. See the digest for the errors.` | All calls in the run failed. | Read the errors in the digest. |
+| `No config at <file>` | The path after `--config` does not exist. | Copy `mentions.example.yaml` and check the path. |
+
+### How to file an issue
+
+Open an issue at https://github.com/loootai/looot-mentions/issues with the run id (shown in the looot run list and in the "Read run <runId> later" line), the command you used, and the raw response body with secrets removed.
+
+## Status
+
+No paid looot run was made. The code and fixtures follow the endpoint descriptions in the looot catalog and the parsers of the sibling repo [looot-monitor](https://github.com/loootai/looot-monitor). The Reddit, X, news and Google parsers reuse shapes from that repo. The YouTube parser searches the response for a list of videos because the exact nesting is not documented, and it is built from a hand-written fixture, so expect to adjust field names after your first real run. In the code, Hacker News and Web are marked `shapeVerified: true` (they use the pinned `serper-search` shape) and Reddit, X, news and YouTube are `false`. If a parser fails on a real response, open an issue with the raw response.
+
+Sentiment by word list misses sarcasm and reads "recommend a tool" as neutral on purpose. Treat labels as a first pass: the feed shows the matched words so you can check each one. The GitHub Actions workflow was linted but not run, because it needs a repository secret. All demo brands are invented.
 
 ## Install for agents
 
 - Read [llms.txt](llms.txt).
 - Claude Code skill: copy `skills/mentions` to `~/.claude/skills/mentions`. It prices the run, asks for a yes, runs the CLI and leads with what needs a reply.
-- Requires an agent token from https://looot.ai/settings in `LOOOT_TOKEN`.
-
-## What is not tested
-
-No paid looot run was made. The code and fixtures follow the endpoint descriptions in the looot catalog and the parsers of the sibling repo [looot-monitor](https://github.com/loootai/looot-monitor). The Reddit, X, news and Google parsers reuse shapes from that repo. The YouTube parser searches the response for a list of videos because the exact nesting is not documented, and it is built from a hand-written fixture, so expect to adjust field names after your first real run. Sentiment by word list misses sarcasm and reads "recommend a tool" as neutral on purpose. Treat labels as a first pass: the feed shows the matched words so you can check each one. The GitHub Actions workflow was linted but not run, because it needs a repository secret. All demo brands are invented.
+- Requires an agent token in `LOOOT_TOKEN`. See [What you need](#what-you-need).
 
 ## Develop
 

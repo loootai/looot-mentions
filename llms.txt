@@ -2,6 +2,9 @@
 
 > Open-source brand and keyword listening. Give it keywords and brand names. It searches Reddit, X, Hacker News, news, YouTube and the web through looot, removes duplicates, tags each mention by source, rule-based sentiment and intent (complaint, question, recommendation request, comparison), and writes a markdown digest of what is new since the last run.
 
+## Setup
+Full steps are in README.md under "What you need", "Try it in one minute" and "Run it with your own data". Short form: Node 22.13+, `npm install --ignore-scripts`, `npm run demo` (http://localhost:3232, no token). A real run needs a looot agent token (Settings, Agent tokens; scopes runs.execute, catalog.read, runs.read, usage.read) exported as LOOOT_TOKEN, and a funded balance (minimum top-up $5). See README "Troubleshooting" for errors.
+
 ## Run it
 - Free check, no token: `npm run mentions -- --demo`
 - Price a real run, no call made: `npm run mentions -- --keywords "Acme,Beta" --dry-run`
