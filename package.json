@@ -1,6 +1,6 @@
 {
   "name": "looot-mentions",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Open-source brand and keyword listening: Reddit, X, Hacker News, news, YouTube and the web in one feed with sentiment, intent and a daily digest. Next.js and looot.",
   "license": "MIT",
   "private": true,
