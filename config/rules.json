@@ -1,0 +1,13 @@
+{
+  "_comment": "Edit these lists to tune sentiment and intent. Matching is case-insensitive. Sentiment adds 1 per positive word and subtracts 1 per negative word. A negator within 3 words before a sentiment word flips it.",
+  "positive": ["love", "loved", "great", "excellent", "amazing", "awesome", "fantastic", "best", "easy", "fast", "reliable", "recommended", "helpful", "worth", "solid", "smooth", "happy", "impressed", "favorite", "favourite", "saved", "useful", "intuitive"],
+  "negative": ["hate", "hated", "terrible", "awful", "worst", "bad", "broken", "bug", "bugs", "buggy", "slow", "expensive", "overpriced", "disappointed", "disappointing", "frustrating", "frustrated", "useless", "scam", "crash", "crashes", "crashed", "unreliable", "confusing", "annoying", "waste", "refund", "cancelled", "canceled", "outage", "down"],
+  "negators": ["not", "no", "never", "isn't", "isnt", "wasn't", "wasnt", "don't", "dont", "doesn't", "doesnt", "can't", "cant", "without", "hardly"],
+  "sentimentThreshold": 1,
+  "intents": {
+    "complaint": ["doesn'?t work", "does not work", "not working", "stopped working", "keeps? crashing", "broken", "terrible", "worst", "disappointed", "frustrat\\w*", "rip[- ]?off", "scam", "refund", "cancel(l)?ed (my|our)", "waste of", "fed up", "outage", "can'?t log ?in", "unacceptable"],
+    "question": ["\\?", "^(how|what|why|when|where|is there|does|do|can|could|should|has anyone|anyone know)\\b"],
+    "recommendation_request": ["\\b(can|does|did) anyone (recommend|suggest)", "\\blooking for\\b", "\\brecommend(ation)?s?\\b.*\\?", "\\bany (good )?(tools?|apps?|alternatives?|suggestions?|recommendations?)\\b", "\\bwhat('?s| is| are) the best\\b", "\\bwhich .{0,40}(should|to) (i|we) (use|pick|choose|buy)\\b"],
+    "comparison": ["\\bvs\\.?\\b", "\\bversus\\b", "\\bcompared (to|with)\\b", "\\balternatives? to\\b", "\\bbetter than\\b", "\\bswitch(ed|ing)? (from|to)\\b", "\\binstead of\\b", "\\bor\\b.{0,30}\\?"]
+  }
+}

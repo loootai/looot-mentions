@@ -1,0 +1,74 @@
+# Searches your keywords once a day and commits the digest and the data file.
+# Needs one repository secret, LOOOT_TOKEN. Without it the job ends with a notice and spends nothing.
+# The run is capped by maxSpendPerRunUsd and monthlyCapUsd in the config file.
+name: mentions
+
+on:
+  schedule:
+    - cron: "23 6 * * *" # 06:23 UTC, every day
+  workflow_dispatch:
+    inputs:
+      config:
+        description: Config file. Empty uses the MENTIONS_CONFIG repository variable, then mentions.yaml.
+        required: false
+        default: ""
+      dry_run:
+        description: Make no looot call. Print what would run and the list-price total.
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mentions
+  cancel-in-progress: false
+
+jobs:
+  mentions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LOOOT_TOKEN: ${{ secrets.LOOOT_TOKEN }}
+      CONFIG: ${{ inputs.config || vars.MENTIONS_CONFIG || 'mentions.yaml' }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Search
+        id: search
+        run: |
+          if [ ! -f "$CONFIG" ]; then
+            echo "::error::No config at $CONFIG. Copy mentions.example.yaml to mentions.yaml and commit it."
+            exit 1
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            npm run -s mentions -- --config "$CONFIG" --dry-run
+            exit 0
+          fi
+          if [ -z "$LOOOT_TOKEN" ]; then
+            echo "::notice::LOOOT_TOKEN is not set, so nothing ran. Add it under Settings, Secrets and variables, Actions."
+            exit 0
+          fi
+          echo "ran=true" >> "$GITHUB_OUTPUT"
+          npm run -s mentions -- --config "$CONFIG" --out digests --data data/mentions.json
+
+      - name: Commit the digest and the data
+        if: always() && steps.search.outputs.ran == 'true'
+        run: |
+          mkdir -p digests data
+          git add digests data
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" \
+            commit -m "mentions: digest for $(date -u +%F)"
+          git push
