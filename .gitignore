@@ -9,6 +9,7 @@ out/
 .DS_Store
 npm-debug.log*
 coverage/
+.vitest/
 .tmp-test-*/
 data/
 digests-demo/

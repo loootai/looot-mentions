@@ -4,8 +4,10 @@ import { DEMO_CONFIG, DEMO_NOW, fixtureRunner } from "@/demo/fixtures";
 import { EMPTY_STORE, runMentions } from "@/engine/engine";
 import { FALLBACK_PRICES } from "@/engine/sources";
 import type { Store } from "@/engine/types";
+import { isDemoEnv } from "@/lib/auth/policy";
 
-export const isDemo = (): boolean => process.env.NEXT_PUBLIC_DEMO === "1";
+/** true when the web UI runs on sample data. Reads the live environment, so a built app obeys the variable it starts with. */
+export const isDemo = (): boolean => isDemoEnv(process.env);
 
 /** File the CLI and the web UI write to. MENTIONS_DATA overrides it. */
 export const dataPath = (): string => resolve(/*turbopackIgnore: true*/ process.env.MENTIONS_DATA ?? "data/mentions.json");

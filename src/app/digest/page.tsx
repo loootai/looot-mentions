@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { needsReply } from "@/engine/digest";
 import { MentionRow } from "@/components/Pills";
+import { requireAdminPage } from "@/lib/auth/guard";
 import { loadStore } from "@/lib/store";
 import type { Mention } from "@/engine/types";
 
@@ -10,6 +11,7 @@ export const metadata = { title: "Digest" };
 const count = (xs: string[]) => Object.entries(xs.reduce<Record<string, number>>((a, x) => ({ ...a, [x]: (a[x] ?? 0) + 1 }), {})).map(([k, n]) => `${k} ${n}`).join(", ");
 
 export default async function DigestPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+  await requireAdminPage();
   const store = await loadStore();
   const days = [...new Set(store.mentions.map((m) => m.firstSeenAt.slice(0, 10)))].sort().reverse();
   const { date } = await searchParams;

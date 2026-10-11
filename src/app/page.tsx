@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { Feed } from "@/components/Feed";
+import { requireAdminPage } from "@/lib/auth/guard";
 import { loadStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
+  await requireAdminPage();
   const store = await loadStore();
   if (store.mentions.length === 0) {
     return (

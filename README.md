@@ -89,6 +89,11 @@ Every environment variable the code reads:
 | --- | --- | --- | --- |
 | `LOOOT_TOKEN` | For a real run, CLI or web UI. Not for `--demo` or `--dry-run`. | Agent token sent as `Authorization: Bearer`. | See "What you need". |
 | `LOOOT_API_URL` | No | Overrides the looot API base URL. Default `https://api.looot.ai`. | Leave unset. |
+| `MENTIONS_ADMIN_PASSWORD` | For the web UI, outside the demo | Admin password, 12 characters or more. Without it the web UI serves no page and no API route except the public ones. | Your choice. |
+| `MENTIONS_ADMIN_PASSWORD_HASH` | No | Instead of the plain password: the output of `npm run hash-password -- 'your password'`. Wins if both are set. | `npm run hash-password`. |
+| `MENTIONS_SESSION_SECRET` | No | Key that signs session cookies. Default: derived from the password, so a new password signs everyone out. | Your choice. |
+| `MENTIONS_COOKIE_SECURE` | No | `0` drops the Secure flag on the cookie, only to test production mode over plain http. | Leave unset. |
+| `MENTIONS_CONFIG` | No | Config file the web UI reads its spend caps from. Default `mentions.yaml`. | Your choice. |
 | `MENTIONS_DATA` | No | File the web UI reads and writes. Default `data/mentions.json`. The CLI uses `--data` instead. | Your choice. |
 | `NEXT_PUBLIC_DEMO` | No | `1` switches the web UI to sample data. `npm run demo` sets it. | Set by the script. |
 | `GITHUB_STEP_SUMMARY` | No | Set by GitHub Actions. The CLI appends the digest to it. | Set by GitHub. |
@@ -117,12 +122,12 @@ Options: `--keywords "Acme,Acme Pro"` instead of a config file, `--sources reddi
 
 Results go to two places. `digests/YYYY-MM-DD.md` holds the new mentions, and a second run on the same day appends to it. `data/mentions.json` holds every mention seen and the spend per month. `data/` is gitignored; `digests/` is not.
 
-Web UI on your data: `npm run dev`, then open http://localhost:3000. It reads `data/mentions.json`. The Run page asks for a quote first (free), then searches for up to the quoted amount. There is no sign-in. Put the UI behind your own auth if you host it.
+Web UI on your data: `npm run dev`, then open http://localhost:3000. It reads `data/mentions.json`. The Run page asks for a quote first (free), then searches for up to the quoted amount. From 0.1.4 the web UI needs an admin password: set `MENTIONS_ADMIN_PASSWORD` (12 characters or more) in `.env.local` before `npm run dev`, then sign in at `/login`. Without it every page redirects to a setup page. See [Securing a deployment](#securing-a-deployment).
 
 ## Spending
 
-- Every paid action shows a quote first. The CLI quotes with `--dry-run` and prints the same plan before a real run. The Run page shows the quote before its search button appears.
-- The run cap is `--max-spend` or `maxSpendPerRunUsd` in the config. The default is $0.25. A call that would pass the cap is skipped and never sent.
+- Every paid action shows a quote first. The CLI quotes with `--dry-run` and prints the same plan before a real run. The Run page shows the quote before its search button appears. The quote carries a signed token tied to your session, the keywords and the caps, and the run route takes the confirmed maximum from that token, not from the request body. A session may start 5 runs per 10 minutes.
+- The run cap is `--max-spend` or `maxSpendPerRunUsd` in the config. The default is $0.25. The web UI reads the same value from `mentions.yaml` on the server and ignores any cap sent in a request. A call that would pass the cap is skipped and never sent.
 - The month cap is `monthlyCapUsd`. The default is $5. The CLI checks it before the run starts, from the spend recorded in `data/mentions.json`, and stops with exit code 3 if the plan would pass it.
 - A typical run is one keyword on all six sources at list price, $0.00663. Two keywords cost $0.0133. Three keywords daily cost about $0.0199 a day, about $0.60 a month.
 - Each call carries an idempotency key made from the keyword, the call input, the endpoint and the day. A second run on the same day replays the stored run and charges nothing more.
@@ -131,7 +136,7 @@ Web UI on your data: `npm run dev`, then open http://localhost:3000. It reads `d
 
 ## Deploy
 
-This app has no Supabase and no `vercel.json`. The web UI stores its data in a local file, so Vercel's read-only, per-request filesystem is a poor fit. The supported hosted setup is the daily GitHub Actions run below. To host the UI, run it on a machine with a disk: `npm run build && npm start`, with `LOOOT_TOKEN` in the environment and your own auth in front.
+This app has no Supabase and no `vercel.json`. The web UI stores its data in a local file, so Vercel's read-only, per-request filesystem is a poor fit. The supported hosted setup is the daily GitHub Actions run below. To host the UI, run it on a machine with a disk: `npm run build && npm start`, with `LOOOT_TOKEN` and `MENTIONS_ADMIN_PASSWORD` in the environment. Without the password the app serves only `/login` and `/api/health`. Serve it over HTTPS, because in production the session cookie is Secure and will not stick over plain http. Rate limits and lockout counters live in memory in one process, so behind several instances rate limit at your proxy too.
 
 ### Daily run on GitHub Actions
 
@@ -144,11 +149,65 @@ This app has no Supabase and no `vercel.json`. The web UI stores its data in a l
 
 Until the secret exists the job ends with a notice ("LOOOT_TOKEN is not set, so nothing ran.") and spends nothing. The workflow passes `actionlint` 1.7.12. The caps in the config file apply, so a run never passes `maxSpendPerRunUsd` and the job stops before any call when the month's spend would pass `monthlyCapUsd`.
 
+## Securing a deployment
+
+Versions 0.1.3 and older had no admin authentication. Anyone who could reach the web UI could read the stored mentions and start paid looot runs on your token. From 0.1.4 every route is either public on purpose or admin, and the admin routes are closed unless you set a password.
+
+### Route map
+
+Pages and routes were listed from `src/app` and classified. A test reads the folder and fails if a route is missing from `src/lib/auth/routes.ts` or if an admin route does not call the gate.
+
+| Class | Count | Routes |
+| --- | --- | --- |
+| Public by design | 4 routes | `/login`, `/api/auth/login`, `/api/auth/logout`, `/api/health` |
+| Public static files | 2 | `/brand/*`, `/favicon.ico` |
+| Admin pages | 3 | `/` (feed), `/digest`, `/run` |
+| Admin API | 2 | `/api/quote` (free, calls the public catalog), `/api/run` (paid looot run) |
+
+There are no server actions, no webhooks and no export routes. Any path not listed is treated as admin.
+
+### How the gate works
+
+- `src/proxy.ts` checks every request. Each admin page, the root layout and each admin route handler checks again with the same function, so a path the matcher misses is still closed.
+- Not set up (no password, and not a clean demo): admin routes answer 503, admin pages redirect to `/login`, which says what to set. Nothing stored is rendered.
+- Set up: a valid session is required. Page requests without one redirect to `/login`. API requests get 401.
+- Sign-in: constant-time password comparison. A session is a signed token in an httpOnly, SameSite=Lax cookie, Secure in production, valid for 8 hours. 5 wrong passwords from one address lock that address for 15 minutes. 40 wrong passwords from anywhere lock sign-in for everyone for 15 minutes (a brute-force guard that also lets an attacker delay you, so use a long password and an IP allow-list too).
+- State-changing admin requests need a same-origin `Origin` header and the per-session token in `x-mentions-csrf`. The layout puts the token in a meta tag and the app's own fetch calls send it.
+- Admin responses carry `Cache-Control: no-store`. All responses carry a Content-Security-Policy (`frame-ancestors 'none'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. The CSP allows inline scripts because Next.js needs them.
+- The password and token never reach the client bundle. The server reads them at runtime.
+- Demo mode (`npm run demo`) stays open and shows a "Demo, no sign-in" badge. It makes no looot call and refuses to start while `LOOOT_TOKEN` is set or a data file exists, unless an admin password is set too.
+
+### Spending routes
+
+- The caps come from `mentions.yaml` on the server (`maxSpendPerRunUsd`, `monthlyCapUsd`), or the file named by `MENTIONS_CONFIG`. Defaults are $0.25 a run and $5 a month. The request cannot set them. `maxSpendPerRunUsd` and `confirmedMaxUsd` in a request body are ignored.
+- `/api/run` needs the signed quote token from `/api/quote`, valid for 10 minutes, for the same session and the same keywords, sources and caps. If the live price moved above the quoted total, it answers 409 and runs nothing.
+- Per session: 5 runs and 30 quotes per 10 minutes. Over that, HTTP 429.
+
+### Setup
+
+```bash
+export MENTIONS_ADMIN_PASSWORD='a password of 12 or more characters'
+# or keep it out of the environment as plain text:
+npm run hash-password -- 'a password of 12 or more characters'   # prints MENTIONS_ADMIN_PASSWORD_HASH=...
+```
+
+Rotate the password by changing the variable and restarting. Changing it signs every session out. The mentions in `data/mentions.json` (or `MENTIONS_DATA`) are a plain file on the server's disk, so protect and back it up like any file you would not publish.
+
+### The stronger option
+
+A shared password is the floor. For anything people other than you can reach, put the app behind a VPN, a private network or an identity-aware proxy (Cloudflare Access, Tailscale, Google IAP, oauth2-proxy). Keep the app's password on as well.
+
+### Not covered
+
+No per-user accounts, no roles, no audit of who signed in. The app has one admin. The CLI (`npm run mentions`) has no sign-in: it runs as you, on your machine, with your `LOOOT_TOKEN`.
+
 ## Troubleshooting
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | `LOOOT_TOKEN is not set. Create an agent token at https://looot.ai/settings, or use --demo or --dry-run.` | The CLI found no token in the environment. | `export LOOOT_TOKEN=...` in the same shell. A `.env.local` file is not read by the CLI. |
+| Every page redirects to `/login`, which says "Admin sign-in is not set up". | `MENTIONS_ADMIN_PASSWORD` is missing or shorter than 12 characters, or the demo was started next to a `LOOOT_TOKEN` or a data file. | Set the password and restart. |
+| `Get a quote first.` (HTTP 409 from the Run page) | The quote is older than 10 minutes, belongs to another session, or the keywords changed after it. | Press "Get a quote" again. |
 | `LOOOT_TOKEN is not set on the server.` (HTTP 503 from the Run page) | The web server started without the token. | Put `LOOOT_TOKEN` in `.env.local` and restart `npm run dev`. |
 | `looot returned HTTP 401`, or the message looot sends back, in the digest under "Sources that did not answer" as `failed (...)` | The token is wrong, revoked or missing a scope. | Create a new token with the four scopes listed above. |
 | `looot returned HTTP 402`, or the message looot sends back | The balance may be too low. The code shows whatever looot returns and does not interpret it. | Top up at https://docs.looot.ai/money (minimum $5), then run again. The idempotency key replays finished calls for free. |
