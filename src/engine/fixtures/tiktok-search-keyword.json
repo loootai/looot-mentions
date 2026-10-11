@@ -1,0 +1,24 @@
+{
+  "search_item_list": [
+    {
+      "aweme_info": {
+        "aweme_id": "7430000000000000001",
+        "desc": "Tallyroom deposit invoices in 60 seconds #freelance",
+        "create_time": 1791590400,
+        "statistics": { "play_count": 18200, "digg_count": 940, "comment_count": 31, "share_count": 12 },
+        "author": { "unique_id": "grid_and_gutter", "nickname": "Grid and Gutter" },
+        "video": { "duration": 58 }
+      }
+    },
+    {
+      "aweme_info": {
+        "aweme_id": "7430000000000000002",
+        "desc": "Why I left Ledgerly. The exports kept crashing.",
+        "create_time": 1791597600,
+        "statistics": { "play_count": 2100, "digg_count": 88, "comment_count": 14, "share_count": 3 },
+        "author": { "unique_id": "numbers_nora", "nickname": "Nora" }
+      }
+    },
+    { "aweme_info": { "aweme_id": "7430000000000000003", "statistics": { "play_count": 5 } } }
+  ]
+}

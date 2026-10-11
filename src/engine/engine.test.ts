@@ -3,15 +3,17 @@ import { DEMO_CONFIG, DEMO_NOW, fixtureRunner } from "@/demo/fixtures";
 import type { LoootRunner } from "@/lib/looot";
 import { renderDigest } from "./digest";
 import { dedupe, EMPTY_STORE, enrich, idempotencyKey, matchesKeyword, overMonthlyCap, planCalls, quoteOf, runMentions } from "./engine";
-import { FALLBACK_PRICES, parseReddit, parseSearch, parseX, parseYoutube, parseNews } from "./sources";
+import { FALLBACK_PRICES, parseInstagram, parseNews, parseReddit, parseSearch, parseTikTok, parseX, parseYoutube, SOURCES } from "./sources";
+import instagramFixture from "./fixtures/instagram-reels-search.json";
+import tiktokFixture from "./fixtures/tiktok-search-keyword.json";
 
 const deps = { looot: fixtureRunner, prices: FALLBACK_PRICES, now: DEMO_NOW };
 const run = (store = EMPTY_STORE, config = DEMO_CONFIG, d = deps) => runMentions(config, store, d);
 
 describe("plan and quote", () => {
   it("makes one call per keyword and source and adds the list prices", () => {
-    expect(planCalls(DEMO_CONFIG)).toHaveLength(12);
-    expect(quoteOf(DEMO_CONFIG, FALLBACK_PRICES).totalMicros).toBe(2 * (1880 + 750 + 1000 + 1000 + 1000 + 1000));
+    expect(planCalls(DEMO_CONFIG)).toHaveLength(16);
+    expect(quoteOf(DEMO_CONFIG, FALLBACK_PRICES).totalMicros).toBe(2 * (1880 + 750 + 1000 + 1000 + 1000 + 1880 + 1500 + 1000));
   });
   it("keys the idempotency by input and day", () => {
     const [c] = planCalls(DEMO_CONFIG);
@@ -104,6 +106,40 @@ describe("parsers", () => {
   });
   it("reads news with outlet and ISO date", () => {
     expect(parseNews({ news: [{ title: "N", link: "https://n.example", source: "Daily", date: "2026-10-01T00:00:00Z" }] })[0]).toMatchObject({ outlet: "Daily", publishedAt: "2026-10-01T00:00:00.000Z" });
+  });
+});
+
+describe("tiktok and instagram", () => {
+  it("reads tiktok videos from the documented search_item_list shape", () => {
+    const r = parseTikTok(tiktokFixture);
+    expect(r).toHaveLength(2);
+    expect(r[0]).toMatchObject({ url: "https://www.tiktok.com/@grid_and_gutter/video/7430000000000000001", author: "@grid_and_gutter", outlet: "tiktok.com", publishedAt: "2026-10-10T00:00:00.000Z", engagement: 940 + 31 + 12 });
+    expect(r[0].title).toContain("Tallyroom deposit invoices");
+    expect(parseTikTok({ search_item_list: [] })).toEqual([]);
+    expect(parseTikTok({ nothing: 1 })).toEqual([]);
+  });
+  it("reads instagram reels and builds the link from the shortcode", () => {
+    const r = parseInstagram(instagramFixture);
+    expect(r).toHaveLength(3);
+    expect(r[0]).toMatchObject({ url: "https://www.instagram.com/reel/C9aBcDeFgH1/", author: "@kiln_and_clay", outlet: "instagram.com", engagement: 410 + 22 });
+    expect(r[2].url).toBeNull();
+    expect(parseInstagram({ data: { items: [{ code: "ZZ", caption: { text: "Hi" } }] } })[0]).toMatchObject({ url: "https://www.instagram.com/reel/ZZ/", title: "Hi" });
+  });
+  it("pins each source to a documented endpoint with a provider name", () => {
+    expect(SOURCES.tiktok).toMatchObject({ jobId: "tiktok.search.videos", endpointId: "scrapecreators-tiktok-search-keyword", fallbackMicros: 1880, provider: "Scrape Creators" });
+    expect(SOURCES.instagram).toMatchObject({ jobId: "instagram.reels.search", endpointId: "anyapi-run-instagram-reels-search", fallbackMicros: 1500, provider: "AnyAPI" });
+    expect(SOURCES.tiktok.inputFor({ term: "Acme", exclude: [] })).toEqual({ query: "Acme" });
+    expect(SOURCES.instagram.inputFor({ term: "Acme", exclude: [] })).toEqual({ query: "Acme" });
+  });
+  it("puts both in the demo feed and the quote lines name the provider", async () => {
+    const r = await run();
+    expect(r.fresh.filter((m) => m.source === "tiktok").length).toBeGreaterThan(0);
+    expect(r.fresh.filter((m) => m.source === "instagram").length).toBeGreaterThan(0);
+    expect(quoteOf(DEMO_CONFIG, FALLBACK_PRICES).lines.find((l) => l.endpointId === "scrapecreators-tiktok-search-keyword")).toMatchObject({ calls: 2, priceMicros: 1880, provider: "Scrape Creators" });
+  });
+  it("keeps tiktok and instagram links out of the web source", () => {
+    expect(String(SOURCES.web.inputFor({ term: "Acme", exclude: [] }).q)).toContain("-site:tiktok.com");
+    expect(String(SOURCES.web.inputFor({ term: "Acme", exclude: [] }).q)).toContain("-site:instagram.com");
   });
 });
 

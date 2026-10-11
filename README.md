@@ -4,9 +4,9 @@
 
 [![License](https://img.shields.io/github/license/loootai/looot-mentions)](LICENSE) [![Release](https://img.shields.io/github/v/release/loootai/looot-mentions)](https://github.com/loootai/looot-mentions/releases) [![Docs](https://img.shields.io/badge/docs-docs.looot.ai-12A06A)](https://docs.looot.ai)
 
-Brand and keyword listening in the open. Give it keywords and brand names. It searches Reddit, X, Hacker News, news, YouTube and the web through [looot](https://looot.ai), removes duplicates, tags each mention by source, sentiment and intent, and shows a feed with filters and a daily digest. A headless CLI writes only what is new since the last run to markdown, so it runs from a daily GitHub Actions cron.
+Brand and keyword listening in the open. Give it keywords and brand names. It searches Reddit, X, Hacker News, news, YouTube, TikTok, Instagram and the web through [looot](https://looot.ai), removes duplicates, tags each mention by source, sentiment and intent, and shows a feed with filters and a daily digest. A headless CLI writes only what is new since the last run to markdown, so it runs from a daily GitHub Actions cron.
 
-An open-source alternative to Brand24 and Mention. On 2026-10-10 Brand24 listed $249 a month for its Individual plan ($199 billed yearly). Mention's pricing page showed no figure. Here one keyword on all six sources costs about $0.0066 per run, so 3 keywords daily is about $0.60 a month.
+An open-source alternative to Brand24 and Mention. On 2026-10-10 Brand24 listed $249 a month for its Individual plan ($199 billed yearly). Mention's pricing page showed no figure. Here one keyword on all eight sources costs about $0.0100 per run, so 3 keywords daily is about $0.90 a month.
 
 ![Feed](docs/screenshots/feed-light.png)
 
@@ -16,7 +16,7 @@ An open-source alternative to Brand24 and Mention. On 2026-10-10 Brand24 listed 
 
 ## What it does
 
-- Searches 6 sources per keyword and keeps a mention only when it contains the keyword and none of your exclusion words.
+- Searches 8 sources per keyword and keeps a mention only when it contains the keyword and none of your exclusion words.
 - Dedupes by canonical URL and by normalised title, so a story syndicated under ten URLs counts once and a link with tracking parameters matches the clean one.
 - Tags sentiment (positive, neutral, negative) with word lists and shows the words that produced the label. Tags intent (complaint, question, recommendation request, comparison) with patterns. Both lists live in [config/rules.json](config/rules.json) and you can edit them.
 - Feed with filters for keyword, source, sentiment and intent, plus text search.
@@ -32,15 +32,19 @@ An open-source alternative to Brand24 and Mention. On 2026-10-10 Brand24 listed 
 | Hacker News | `google.serp.organic` | `serper-search` with `site:news.ycombinator.com` | $0.0010 |
 | News | `news.search` | `serper-news` | $0.0010 |
 | YouTube | `youtube.search.videos` | `tikhub-api-youtube-web-search-video` | $0.0010 |
+| TikTok | `tiktok.search.videos` | `scrapecreators-tiktok-search-keyword` | $0.00188 |
+| Instagram reels | `instagram.reels.search` | `anyapi-run-instagram-reels-search` | $0.0015 |
 | Web | `google.serp.organic` | `serper-search`, excluding the sites above | $0.0010 |
 
 looot has no Hacker News provider, so Hacker News is a Google search limited to that site. It finds stories and discussions that Google indexed, not every comment.
 
 Prices are list prices read from the free public catalog on 2026-10-10. A real run re-reads them first and refuses to call an endpoint whose live price it cannot read.
 
-Cost of a typical run, one keyword on all six sources at list price: $0.00663. Two keywords: $0.0133. A daily run of 3 keywords costs about $0.0199 a day.
+Cost of a typical run, one keyword on all eight sources at list price: $0.01001 (0.00188 + 0.00075 + 0.0010 + 0.0010 + 0.0010 + 0.00188 + 0.0015 + 0.0010). Two keywords: $0.02002. A daily run of 3 keywords costs about $0.03003 a day. Before TikTok and Instagram were added the same run cost $0.00663 on six sources.
 
-Dropped, because looot has no provider for it: Facebook and Instagram posts by keyword, TikTok keyword search (providers exist, not wired here), podcasts, forums outside Reddit and Hacker News, review sites as a source, share of voice, influence scores and alerts on volume spikes.
+TikTok and Instagram came back in 0.1.5. I checked the catalog on 2026-10-11 and both have keyword search. TikTok uses the Scrape Creators endpoint, whose catalog entry documents the response (`search_item_list[].aweme_info`). Instagram searches reels only, because the catalog's Instagram keyword endpoints return accounts and hashtags or Google-indexed posts, and the reels endpoint is the one that searches Instagram itself. Its catalog entry lists no field names, so that parser tries several spellings and is marked unverified.
+
+Still dropped, because the catalog has no provider for it. Facebook posts by keyword: searches for `facebook post search`, `facebook keyword`, `facebook public posts`, `justoneapi facebook` and `anyapi facebook` found only posts read by page, group or URL, plus Marketplace, events and ad libraries. Hacker News: searches for `hacker news`, `ycombinator`, `hn algolia` and `forum` found no Hacker News endpoint, so it stays a Google search limited to news.ycombinator.com. Also dropped: Instagram posts by keyword. `anysite-api-instagram-search-posts` exists at $0.00012 a result, but this app prices and caps per call, not per result, so it is not wired. Podcasts, forums outside Reddit and Hacker News, review sites as a source, share of voice, influence scores and alerts on volume spikes.
 
 ## What you need
 
@@ -102,12 +106,14 @@ Price the run first. This reads the free public catalog for live prices when it 
 
 ```
 $ npm run mentions -- --config mentions.yaml --dry-run
-Plan: 2 keyword(s) on 6 source(s), 12 calls, list price $0.01326 (list prices dated 2026-10-10). Cap $0.2500 a run, $5.00 a month.
-    2 x scrapecreators-reddit-search  $0.00188
-    2 x anyapi-run-twitter-search  $0.00075
-    4 x serper-search  $0.0010
-    2 x serper-news  $0.0010
-    2 x tikhub-api-youtube-web-search-video  $0.0010
+Plan: 2 keyword(s) on 8 source(s), 16 calls, list price $0.02002 (list prices dated 2026-10-10). Cap $0.2500 a run, $5.00 a month.
+    2 x scrapecreators-reddit-search (Scrape Creators)  $0.00188
+    2 x anyapi-run-twitter-search (AnyAPI)  $0.00075
+    4 x serper-search (Serper)  $0.0010
+    2 x serper-news (Serper)  $0.0010
+    2 x tikhub-api-youtube-web-search-video (TikHub)  $0.0010
+    2 x scrapecreators-tiktok-search-keyword (Scrape Creators)  $0.00188
+    2 x anyapi-run-instagram-reels-search (AnyAPI)  $0.0015
 Dry run: no looot call was made and nothing was written.
 ```
 
@@ -129,7 +135,7 @@ Web UI on your data: `npm run dev`, then open http://localhost:3000. It reads `d
 - Every paid action shows a quote first. The CLI quotes with `--dry-run` and prints the same plan before a real run. The Run page shows the quote before its search button appears. The quote carries a signed token tied to your session, the keywords and the caps, and the run route takes the confirmed maximum from that token, not from the request body. A session may start 5 runs per 10 minutes.
 - The run cap is `--max-spend` or `maxSpendPerRunUsd` in the config. The default is $0.25. The web UI reads the same value from `mentions.yaml` on the server and ignores any cap sent in a request. A call that would pass the cap is skipped and never sent.
 - The month cap is `monthlyCapUsd`. The default is $5. The CLI checks it before the run starts, from the spend recorded in `data/mentions.json`, and stops with exit code 3 if the plan would pass it.
-- A typical run is one keyword on all six sources at list price, $0.00663. Two keywords cost $0.0133. Three keywords daily cost about $0.0199 a day, about $0.60 a month.
+- A typical run is one keyword on all eight sources at list price, $0.01001. Two keywords cost $0.02002. Three keywords daily cost about $0.03003 a day, about $0.90 a month.
 - Each call carries an idempotency key made from the keyword, the call input, the endpoint and the day. A second run on the same day replays the stored run and charges nothing more.
 - A call still going when waiting stops (60 seconds) is "pending", not "failed", and the digest says so.
 - Failed calls are not charged by looot.
@@ -226,7 +232,7 @@ Open an issue at https://github.com/loootai/looot-mentions/issues with the run i
 
 ## Status
 
-No paid looot run was made. The code and fixtures follow the endpoint descriptions in the looot catalog and the parsers of the sibling repo [looot-monitor](https://github.com/loootai/looot-monitor). The Reddit, X, news and Google parsers reuse shapes from that repo. The YouTube parser searches the response for a list of videos because the exact nesting is not documented, and it is built from a hand-written fixture, so expect to adjust field names after your first real run. In the code, Hacker News and Web are marked `shapeVerified: true` (they use the pinned `serper-search` shape) and Reddit, X, news and YouTube are `false`. If a parser fails on a real response, open an issue with the raw response.
+No paid looot run was made. The code and fixtures follow the endpoint descriptions in the looot catalog and the parsers of the sibling repo [looot-monitor](https://github.com/loootai/looot-monitor). The Reddit, X, news and Google parsers reuse shapes from that repo. The YouTube parser searches the response for a list of videos because the exact nesting is not documented, and it is built from a hand-written fixture, so expect to adjust field names after your first real run. In the code, Hacker News and Web are marked `shapeVerified: true` (they use the pinned `serper-search` shape) and Reddit, X, news, YouTube, TikTok and Instagram are `false`. The TikTok parser follows the response the catalog documents for `scrapecreators-tiktok-search-keyword`, and its fixture is `src/engine/fixtures/tiktok-search-keyword.json`. The Instagram reels entry documents no fields, so that parser tries several names against a hand-written fixture. If a parser fails on a real response, open an issue with the raw response.
 
 Sentiment by word list misses sarcasm and reads "recommend a tool" as neutral on purpose. Treat labels as a first pass: the feed shows the matched words so you can check each one. The GitHub Actions workflow was linted but not run, because it needs a repository secret. All demo brands are invented.
 

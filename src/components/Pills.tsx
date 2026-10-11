@@ -9,7 +9,7 @@ export function MentionRow({ m }: { m: Mention }) {
   return (
     <li className="border-b border-line p-4 last:border-0">
       <div className="flex flex-wrap items-center gap-2 text-12 text-mute">
-        <span className="rounded bg-brand-soft px-2 py-0.5 text-ink">{SOURCES[m.source].label}</span>
+        <span className="rounded bg-brand-soft px-2 py-0.5 text-ink" title={`${SOURCES[m.source].jobId} via ${SOURCES[m.source].provider}, ${m.via}`}>{SOURCES[m.source].label}</span>
         {m.outlet && <span>{m.outlet}</span>}
         {m.author && <span>{m.author}</span>}
         {m.publishedAt && <span className="num">{m.publishedAt.slice(0, 10)}</span>}

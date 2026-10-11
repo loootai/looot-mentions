@@ -2,6 +2,18 @@
 
 Built from the GitHub release notes. Each version links to its release page.
 
+## 0.1.5 (2026-10-11)
+
+TikTok and Instagram keyword search are back.
+
+What changed
+- TikTok source: `tiktok.search.videos`, endpoint `scrapecreators-tiktok-search-keyword`, $0.00188 a call. The parser follows the response the catalog documents.
+- Instagram reels source: `instagram.reels.search`, endpoint `anyapi-run-instagram-reels-search`, $0.0015 a call. The catalog lists no field names, so the parser is tolerant and marked unverified.
+- The default source list is now eight. One keyword on all eight costs $0.01001 (was $0.00663 on six). Set `sources:` in the config to keep the old six.
+- The quote shows the provider next to each endpoint and its price, in the CLI plan and in the Run page.
+- The Web source now also skips tiktok.com and instagram.com, so a post is not counted twice.
+- Facebook posts by keyword and Hacker News stay dropped. The catalog has no endpoint for either. Hacker News is still a Google site search.
+
 ## 0.1.4 (2026-10-11)
 
 Earlier versions (0.1.3 and older) had no admin authentication. Anyone who could reach a copy of the web UI could read the stored mentions and start paid looot runs on the operator's token. If you run one on a host other people can reach, upgrade to 0.1.4 now.

@@ -9,7 +9,7 @@ interface QuoteAnswer {
   capMicros: number;
   overCap: boolean;
   calls: number;
-  lines: { endpointId: string; calls: number; priceMicros: number }[];
+  lines: { endpointId: string; provider: string; calls: number; priceMicros: number }[];
   priceSource: string;
   quoteToken: string;
   error?: string;
@@ -64,7 +64,7 @@ export function RunForm() {
         <div className="rounded-panel border border-line bg-panel p-4 text-14">
           <p className="font-semibold">This run costs up to <span className="num">{usd(quote.totalMicros)}</span> for {quote.calls} searches.</p>
           <ul className="mt-2 space-y-1 text-13 text-mute">
-            {quote.lines.map((l) => <li key={l.endpointId} className="num">{l.calls} x {l.endpointId} at {usd(l.priceMicros)}</li>)}
+            {quote.lines.map((l) => <li key={l.endpointId} className="num">{l.calls} x {l.endpointId} ({l.provider}) at {usd(l.priceMicros)} a call</li>)}
           </ul>
           <p className="mt-2 text-12 text-mute">{quote.priceSource === "catalog" ? "Live prices from the looot catalog." : "List prices dated 2026-10-10 (the catalog was not read)."}</p>
           {quote.overCap && <p className="mt-2 text-medium">Over the cap of {usd(quote.capMicros)} a run, set on the server in mentions.yaml. Searches that do not fit will be skipped.</p>}

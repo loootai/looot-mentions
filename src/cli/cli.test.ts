@@ -19,7 +19,7 @@ describe("mentions CLI", () => {
     const d = tmp();
     const r = run(["--keywords", "Acme,Beta", "--dry-run", "--out", d, "--data", join(d, "m.json")]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("12 calls, list price $0.01326");
+    expect(r.stdout).toContain("16 calls, list price $0.02002");
     expect(r.stdout).toContain("no looot call was made");
     expect(existsSync(join(d, "m.json"))).toBe(false);
   });

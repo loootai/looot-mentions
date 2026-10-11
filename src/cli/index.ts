@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   const priced = live ? await fetchPrices(FALLBACK_PRICES) : { prices: FALLBACK_PRICES, source: "fallback" as const, unread: [] as string[] };
   const quote = quoteOf(config, priced.prices);
   console.log(`Plan: ${config.keywords.length} keyword(s) on ${config.sources.length} source(s), ${quote.calls.length} calls, list price ${usdPrecise(quote.totalMicros)} (${priced.source === "catalog" ? "live catalog prices" : `list prices dated ${PRICES_AS_OF}`}). Cap ${usdPrecise(config.maxSpendPerRunMicros)} a run, ${usdPrecise(config.monthlyCapMicros)} a month.`);
-  for (const l of quote.lines) console.log(`  ${String(l.calls).padStart(3)} x ${l.endpointId}  ${usdPrecise(l.priceMicros)}`);
+  for (const l of quote.lines) console.log(`  ${String(l.calls).padStart(3)} x ${l.endpointId} (${l.provider})  ${usdPrecise(l.priceMicros)}`);
   if (quote.totalMicros > config.maxSpendPerRunMicros) console.log("The plan is over the run cap. Calls that do not fit are skipped.");
   if (args["dry-run"]) return console.log("Dry run: no looot call was made and nothing was written.");
 

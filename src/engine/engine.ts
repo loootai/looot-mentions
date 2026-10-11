@@ -22,16 +22,19 @@ export function planCalls(config: MentionsConfig): PlannedCall[] {
 
 export interface Quote {
   calls: PlannedCall[];
-  lines: { endpointId: string; calls: number; priceMicros: number }[];
+  lines: { endpointId: string; provider: string; calls: number; priceMicros: number }[];
   totalMicros: number;
 }
+
+/** Provider name behind a pinned endpoint, or the endpoint id when it is not one of ours. */
+const providerOf = (endpointId: string): string => Object.values(SOURCES).find((s) => s.endpointId === endpointId)?.provider ?? endpointId;
 
 /** Prices the plan at the given per-call prices. */
 export function quoteOf(config: MentionsConfig, prices: PriceMap): Quote {
   const calls = planCalls(config);
   const by = new Map<string, number>();
   for (const c of calls) by.set(c.endpointId, (by.get(c.endpointId) ?? 0) + 1);
-  const lines = [...by.entries()].map(([endpointId, n]) => ({ endpointId, calls: n, priceMicros: prices[endpointId] ?? 0 }));
+  const lines = [...by.entries()].map(([endpointId, n]) => ({ endpointId, provider: providerOf(endpointId), calls: n, priceMicros: prices[endpointId] ?? 0 }));
   return { calls, lines, totalMicros: lines.reduce((n, l) => n + l.calls * l.priceMicros, 0) };
 }
 

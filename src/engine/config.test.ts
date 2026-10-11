@@ -5,7 +5,7 @@ describe("config", () => {
   it("accepts strings and objects, with defaults", () => {
     const c = buildConfig({ keywords: ["Acme", { term: "Beta", exclude: ["beta test"] }] });
     expect(c.keywords[1]).toEqual({ term: "Beta", exclude: ["beta test"] });
-    expect(c.sources).toHaveLength(6);
+    expect(c.sources).toHaveLength(8);
     expect(c).toMatchObject({ maxSpendPerRunMicros: 250_000, monthlyCapMicros: 5_000_000, maxAgeDays: 14 });
   });
   it("rejects no keywords, 21 keywords, unknown sources and bad caps", () => {

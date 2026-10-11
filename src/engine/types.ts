@@ -1,4 +1,4 @@
-export type SourceId = "reddit" | "x" | "hn" | "news" | "youtube" | "web";
+export type SourceId = "reddit" | "x" | "hn" | "news" | "youtube" | "tiktok" | "instagram" | "web";
 export type SentimentLabel = "positive" | "neutral" | "negative";
 export type Intent = "complaint" | "question" | "recommendation_request" | "comparison";
 

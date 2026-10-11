@@ -3,8 +3,8 @@ keywords:
   - Tallyroom                      # your brand
   - term: Ledgerly                 # a competitor
     exclude: [ledgerly bank]       # drop mentions that contain these words
-# Optional. Default is all six: reddit, x, hn, news, youtube, web
-sources: [reddit, x, hn, news, youtube, web]
+# Optional. Default is all eight: reddit, x, hn, news, youtube, tiktok, instagram, web
+sources: [reddit, x, hn, news, youtube, tiktok, instagram, web]
 # Hard cap for one run. Searches that would pass it are skipped.
 maxSpendPerRunUsd: 0.25
 # The run stops before any call when this month's spend plus the plan would pass it.

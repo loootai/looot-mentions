@@ -1,5 +1,7 @@
 import type { LoootRun, LoootRunner } from "@/lib/looot";
 import { buildConfig } from "@/engine/config";
+import instagramFixture from "@/engine/fixtures/instagram-reels-search.json";
+import tiktokFixture from "@/engine/fixtures/tiktok-search-keyword.json";
 import type { MentionsConfig } from "@/engine/types";
 
 /** The fixed time every demo run is stamped with. */
@@ -54,6 +56,9 @@ const YT: Record<string, unknown> = {
   [T]: { data: { items: [{ video_id: "abc123", title: "Tallyroom review: is it worth it?", channel_name: "Studio Finance", published_time: "2026-10-09T12:00:00Z", view_count: 5200 }] } },
 };
 
+const TIKTOK: Record<string, unknown> = { [T]: { search_item_list: tiktokFixture.search_item_list.filter((i) => i.aweme_info.desc?.includes(T)) }, [L]: { search_item_list: tiktokFixture.search_item_list.filter((i) => i.aweme_info.desc?.includes(L)) } };
+const INSTAGRAM: Record<string, unknown> = { [T]: { reels: instagramFixture.reels.filter((r) => r.caption.includes(T)) }, [L]: { reels: instagramFixture.reels.filter((r) => r.caption.includes(L)) } };
+
 const done = (result: unknown): LoootRun => ({ runId: "run_demo", status: "completed", result, actualCost: 0 });
 const termIn = (text: string): string => (text.includes(T) ? T : text.includes(L) ? L : "");
 
@@ -64,6 +69,8 @@ export const fixtureRunner: LoootRunner = {
       case "scrapecreators-reddit-search": return done(REDDIT[String(input.query)] ?? { posts: [] });
       case "anyapi-run-twitter-search":
         return input.query === L ? { runId: "run_demo_pending", status: "running" } : done(X[String(input.query)] ?? { tweets: [] });
+      case "scrapecreators-tiktok-search-keyword": return done(TIKTOK[String(input.query)] ?? { search_item_list: [] });
+      case "anyapi-run-instagram-reels-search": return done(INSTAGRAM[String(input.query)] ?? { reels: [] });
       case "serper-news": return done(NEWS[termIn(String(input.q))] ?? { news: [] });
       case "tikhub-api-youtube-web-search-video":
         return input.search_query === L ? { runId: "run_demo_fail", status: "failed", error: { message: "Provider timed out" } } : done(YT[String(input.search_query)] ?? { data: { items: [] } });

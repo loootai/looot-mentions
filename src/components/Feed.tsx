@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { Intent, Mention, SentimentLabel, SourceId } from "@/engine/types";
 import { MentionRow } from "./Pills";
 
-const SOURCE_LABEL: Record<SourceId, string> = { reddit: "Reddit", x: "X", hn: "Hacker News", news: "News", youtube: "YouTube", web: "Web" };
+const SOURCE_LABEL: Record<SourceId, string> = { reddit: "Reddit", x: "X", hn: "Hacker News", news: "News", youtube: "YouTube", tiktok: "TikTok", instagram: "Instagram", web: "Web" };
 const INTENT_LABEL: Record<Intent, string> = { complaint: "Complaint", question: "Question", recommendation_request: "Recommendation request", comparison: "Comparison" };
 const SENTIMENTS: SentimentLabel[] = ["positive", "neutral", "negative"];
 
