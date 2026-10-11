@@ -1,11 +1,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { NextResponse } from "next/server";
-import { EMPTY_STORE, overMonthlyCap, runMentions } from "@/engine/engine";
+import { EMPTY_STORE, payableMicros, runMentions } from "@/engine/engine";
 import { requireAdminRoute, sessionIdOf } from "@/lib/auth/guard";
 import { allow, retryAfter, RUN_MAX_PER_SESSION, RUN_WINDOW_MS } from "@/lib/auth/limits";
 import { verifyQuote } from "@/lib/auth/quoteToken";
+import { budgetFieldError } from "@/lib/budget";
+import { getBudget } from "@/lib/budgetService";
 import { LoootError, loootFromEnv } from "@/lib/looot";
+import { usd } from "@/lib/money";
 import { ConfigError, planFromRequest, type RunRequest } from "@/lib/runApi";
 import { dataPath, isDemo, loadStore } from "@/lib/store";
 
@@ -13,7 +16,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * Paid. Admin only. Runs the keywords under the caps in the server's config file.
+ * Paid. Admin only. Runs the keywords under the caps in the server's config file and the owner's period budget.
+ * Check order: the quote, the cap per run, an atomic reservation against the period budget (one per call), then the call.
+ * A request that carries a budget field is refused with 400; a cap in the body is ignored.
  * The confirmed maximum is the total in the signed quote token from POST /api/quote, not a number the caller sends.
  * A missing, expired or foreign token, or a live quote above the quoted total, answers 409 and runs nothing.
  * Five runs per session per 10 minutes.
@@ -28,6 +33,8 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: "Send JSON." }, { status: 400 });
   }
+  const refused = budgetFieldError(body);
+  if (refused) return Response.json({ error: refused }, { status: 400 });
   try {
     const p = await planFromRequest(body);
     if (isDemo()) return Response.json({ demo: true, message: "Demo mode makes no looot call and writes nothing. Run without NEXT_PUBLIC_DEMO to search for real." });
@@ -46,13 +53,27 @@ export async function POST(req: Request) {
       throw e;
     }
     const now = new Date();
+    const budget = getBudget();
+    // Runs that ended since last time settle first, so their reservations stop counting.
+    await budget.reconcile(looot, now).catch(() => undefined);
+    const room = await budget.status(now);
+    const toCharge = Math.min(await payableMicros(p.quote.calls, budget, now, p.prices), p.config.maxSpendPerRunMicros, confirmed);
+    if (toCharge > room.remainingMicros) {
+      return Response.json(
+        { error: `The quote (${usd(toCharge)}) is above what is left of the budget (${usd(room.remainingMicros)}: ${usd(room.day.remainingMicros)} today, ${usd(room.month.remainingMicros)} this month). Nothing was called. Raise the budget on the Costs page, or wait for the period to roll over.`, code: "budget" },
+        { status: 402 },
+      );
+    }
     const store = await loadStore();
-    if (overMonthlyCap(p.config, store, p.quote.totalMicros, now)) return Response.json({ error: "The monthly cap would be passed. Nothing ran." }, { status: 402 });
     const config = { ...p.config, maxSpendPerRunMicros: Math.min(p.config.maxSpendPerRunMicros, confirmed) };
-    const result = await runMentions(config, store ?? EMPTY_STORE, { looot, prices: p.prices, unpriced: new Set(p.unread), now });
+    const result = await runMentions(config, store ?? EMPTY_STORE, { looot, prices: p.prices, unpriced: new Set(p.unread), now, ledger: budget });
+    const stopped = result.reports.find((r) => r.status === "skipped_budget");
+    if (stopped && result.actualMicros === 0 && result.reports.every((r) => r.status === "skipped_budget" || r.status === "skipped_cap")) {
+      return Response.json({ error: stopped.error ?? "The period budget is reached. Nothing was called.", code: "budget" }, { status: 402 });
+    }
     mkdirSync(dirname(dataPath()), { recursive: true });
     writeFileSync(dataPath(), `${JSON.stringify(result.store)}\n`);
-    return Response.json({ fresh: result.fresh.length, chargedMicros: result.actualMicros, reports: result.reports });
+    return Response.json({ fresh: result.fresh.length, chargedMicros: result.actualMicros, reports: result.reports, budgetMessage: stopped?.error ?? null });
   } catch (e) {
     if (e instanceof ConfigError) return Response.json({ error: e.message }, { status: 400 });
     return Response.json({ error: e instanceof Error ? e.message : "Run failed." }, { status: 500 });

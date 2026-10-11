@@ -2,6 +2,29 @@
 
 Built from the GitHub release notes. Each version links to its release page.
 
+## 0.1.6 (2026-10-11)
+
+Spend limits, version 2. Before this, the only limit across runs was `monthlyCapUsd`, checked before a run and written after it. Two runs started together both passed, a run still going at looot counted as $0, and the idempotency key carried the day, so a repeat on a new day paid again.
+
+What changed
+- Period budget: a daily and a monthly amount (UTC), $10 and $50 by default, saved in `budget.json` in `LOOOT_MENTIONS_DATA_DIR` (default `.looot-data`). The signed-in owner changes it on the new Costs page (`PUT /api/budget`, session and CSRF token). `LOOOT_MENTIONS_DAILY_USD` and `LOOOT_MENTIONS_MONTHLY_USD` set the starting values. A `monthlyCapUsd` that your config file sets is still the starting monthly budget. A run request cannot raise the budget: one that carries a budget field is refused with 400. The cap per run still comes only from the server config; a cap in a request is ignored.
+- Check order: the quote, the cap per run, an atomic reservation against the period budget, then the call.
+- Reserve then settle: each paid call reserves its list price under a lock file before it is made, and is skipped if used plus reserved plus the price would pass either budget. The reservation becomes the real cost when the call ends and goes back when looot answers with an error. A call still running keeps it and is never counted as $0. The next run looks up pending calls with `GET /v1/runs/{id}` and settles them. A reservation that cannot be looked up is released after 24 hours.
+- Stable keys: the key was a hash of the keyword, input and the day. It is now a hash of the source, endpoint and normalised input, plus a 24-hour refresh window (`floor(time / 24 hours)`). No date or clock time goes in, and no call input carries one: the searches use the relative windows `week` and `qdr:w`, and a test fails if a date appears.
+- Stored results: a finished call is stored under its key, so the same request inside the window is answered with no call and no charge. The up-front budget check ignores calls that have a stored answer.
+- The sidebar spend panel and the Costs page show used, reserved and remaining for today and this month. The CLI prints what is left before a run and takes `--partial`. The run page answers HTTP 402 with the reason when the budget is reached.
+- The call status `skipped_budget` is new: a call skipped because the period budget was reached.
+- The daily GitHub Action keeps `budget.json` in `data/` and commits it with the mentions (`git add -f`, because `data/` is gitignored), so the budget carries over between runs.
+
+For upgraders
+- No migration. This repo has no database. `budget.json` is a new file. Run one instance on a persistent disk, since the file is not shared between hosts.
+- Your data file is read as before. Its month-by-month `spend` figures are kept but no longer limit anything. The new budget starts at zero used, so the month you upgrade in has one fresh allowance.
+- `monthlyCapUsd` is no longer checked on its own. It only sets the starting monthly budget.
+- Keys changed shape, so the first run after upgrading pays once for calls that ran earlier the same day.
+- `/api/budget` and `/costs` are new admin routes. The route map and its tests include them.
+
+[Release page](https://github.com/loootai/looot-mentions/releases/tag/v0.1.6)
+
 ## 0.1.5 (2026-10-11)
 
 TikTok and Instagram keyword search are back.

@@ -23,7 +23,7 @@ const num = (v: unknown, fallback: number, name: string, min: number): number =>
 
 /**
  * The spend caps for runs started from the web UI. They come from the server's config file
- * (mentions.yaml, or MENTIONS_CONFIG), never from the request. Defaults: $0.25 a run, $5 a month.
+ * (mentions.yaml, or MENTIONS_CONFIG), never from the request. Defaults: $0.25 a run. The month is limited by the period budget, see budget.ts.
  */
 export function serverCaps(env: Record<string, string | undefined> = process.env): ServerCaps {
   const p = configPath(env);
@@ -40,4 +40,20 @@ export function serverCaps(env: Record<string, string | undefined> = process.env
     monthlyCapUsd: num(o.monthlyCapUsd, DEFAULT_CAPS.monthlyCapUsd, "monthlyCapUsd", 0.000001),
     maxAgeDays: num(o.maxAgeDays, DEFAULT_CAPS.maxAgeDays, "maxAgeDays", 1),
   };
+}
+
+/**
+ * The monthlyCapUsd an older config file set on purpose, or undefined when the file has none. Before the period budget
+ * this was the only cross-run limit, so it is still honoured as the starting monthly budget (the owner's saved budget wins).
+ */
+export function legacyMonthlyCapUsd(env: Record<string, string | undefined> = process.env): number | undefined {
+  const p = configPath(env);
+  if (!existsSync(p)) return undefined;
+  try {
+    const raw = parse(readFileSync(p, "utf8")) as Record<string, unknown> | null;
+    const n = Number(raw?.monthlyCapUsd);
+    return raw && raw.monthlyCapUsd !== undefined && Number.isFinite(n) && n > 0 ? n : undefined;
+  } catch {
+    return undefined;
+  }
 }

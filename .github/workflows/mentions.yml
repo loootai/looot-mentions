@@ -1,6 +1,6 @@
 # Searches your keywords once a day and commits the digest and the data file.
 # Needs one repository secret, LOOOT_TOKEN. Without it the job ends with a notice and spends nothing.
-# The run is capped by maxSpendPerRunUsd and monthlyCapUsd in the config file.
+# The run is capped by maxSpendPerRunUsd in the config file and by the period budget in data/budget.json.
 name: mentions
 
 on:
@@ -32,6 +32,7 @@ jobs:
       LOOOT_TOKEN: ${{ secrets.LOOOT_TOKEN }}
       CONFIG: ${{ inputs.config || vars.MENTIONS_CONFIG || 'mentions.yaml' }}
       DRY_RUN: ${{ inputs.dry_run }}
+      LOOOT_MENTIONS_DATA_DIR: data
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -64,7 +65,7 @@ jobs:
         if: always() && steps.search.outputs.ran == 'true'
         run: |
           mkdir -p digests data
-          git add digests data
+          git add -f digests data
           if git diff --cached --quiet; then
             echo "Nothing to commit."
             exit 0

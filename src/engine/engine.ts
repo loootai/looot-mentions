@@ -1,6 +1,8 @@
-import { dayKey, hash } from "@/lib/util";
+import { createHash } from "node:crypto";
+import type { Ledger } from "@/lib/budget";
 import type { LoootRunner } from "@/lib/looot";
 import { Spender, type CallStatus, type PriceMap } from "@/lib/spender";
+import { hash } from "@/lib/util";
 import { DEFAULT_RULES, intentsOf, sentimentOf, type Rules } from "./rules";
 import { fingerprintOf, normalizeTitle, SOURCES, type RawMention } from "./sources";
 import type { Keyword, Mention, MentionsConfig, SourceId, Store } from "./types";
@@ -38,9 +40,42 @@ export function quoteOf(config: MentionsConfig, prices: PriceMap): Quote {
   return { calls, lines, totalMicros: lines.reduce((n, l) => n + l.calls * l.priceMicros, 0) };
 }
 
-/** Stable per (keyword, source, input, day): the same call twice in one day replays the stored run and costs nothing more. */
+/**
+ * How long a result is reused before a run looks again: 24 hours. A repeat inside the window is answered from the stored
+ * result with no call and no charge. The window is a whole number, floor(time / 24 hours), never a date.
+ */
+export const REFRESH_MS = 24 * 3_600_000;
+
+/** Lowercases text, trims it and sorts object keys, so the same request always has the same shape. */
+function normalise(v: unknown): unknown {
+  if (typeof v === "string") return v.trim().replace(/\s+/g, " ").toLowerCase();
+  if (Array.isArray(v)) return v.map(normalise);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, normalise(x)]));
+  return v;
+}
+
+const shapeOf = (call: Pick<PlannedCall, "source" | "endpointId" | "input">) => normalise([call.source, call.endpointId, call.input]);
+
+/**
+ * One key per (source, endpoint, normalised input) and refresh window. No date and no clock time goes in, and no call
+ * input carries one (the searches use the relative windows `week` and `qdr:w`). Inside a window a repeat gets the same
+ * key and the stored result answers it. A new window is an explicit new request with its own key, so a daily run
+ * still looks for new mentions. The keyword's exclusion list is left out: it filters after the call and costs nothing.
+ */
 export function idempotencyKey(call: PlannedCall, now: Date): string {
-  return `mn-${hash(`${call.keyword.term}|${call.source}|${call.endpointId}|${JSON.stringify(call.input)}|${dayKey(now)}`)}`;
+  return `mn-${hash(JSON.stringify(shapeOf(call)))}-p${Math.floor(now.getTime() / REFRESH_MS)}`;
+}
+
+/** Hash of what a paid call asks for: source, endpoint and normalised input. Guards a stored result against a short-key collision. */
+export function callFingerprint(call: Pick<PlannedCall, "source" | "endpointId" | "input">): string {
+  return createHash("sha256").update(JSON.stringify(shapeOf(call))).digest("hex");
+}
+
+/** What a plan can still charge: its list-price total, less the calls a stored result already answers. */
+export async function payableMicros(calls: PlannedCall[], ledger: Pick<Ledger, "recall">, now: Date, prices: PriceMap): Promise<number> {
+  let n = 0;
+  for (const c of calls) if (!(await ledger.recall(idempotencyKey(c, now), callFingerprint(c), now))) n += prices[c.endpointId] ?? 0;
+  return n;
 }
 
 export const monthKey = (d: Date): string => d.toISOString().slice(0, 7);
@@ -114,12 +149,13 @@ const KEEP = 5000;
 
 /**
  * Runs every keyword on every source, then enriches, filters and dedupes against the store.
- * A call that would pass the per-run cap is skipped. A call still running when waiting stops is "pending", not "failed".
+ * Check order for each call: a stored answer, the per-run cap, an atomic reservation against the period budget, then the call.
+ * A call over the cap or the budget is skipped. A call still running when waiting stops is "pending", not "failed", and keeps its reservation.
  */
-export async function runMentions(config: MentionsConfig, store: Store, deps: { looot: LoootRunner; prices: PriceMap; unpriced?: ReadonlySet<string>; now: Date; rules?: Rules }): Promise<RunResult> {
-  const spender = new Spender({ looot: deps.looot, capMicros: config.maxSpendPerRunMicros, prices: deps.prices, unpriced: deps.unpriced });
+export async function runMentions(config: MentionsConfig, store: Store, deps: { looot: LoootRunner; prices: PriceMap; unpriced?: ReadonlySet<string>; now: Date; rules?: Rules; ledger?: Ledger }): Promise<RunResult> {
+  const spender = new Spender({ looot: deps.looot, capMicros: config.maxSpendPerRunMicros, prices: deps.prices, unpriced: deps.unpriced, ledger: deps.ledger, now: deps.now });
   const planned = planCalls(config);
-  const results = await Promise.all(planned.map((p) => spender.call(p.endpointId, p.input, idempotencyKey(p, deps.now))));
+  const results = await Promise.all(planned.map((p) => spender.call(p.endpointId, p.input, idempotencyKey(p, deps.now), callFingerprint(p))));
   const seen = { fingerprints: new Set(store.mentions.map((m) => m.fingerprint)), titleKeys: new Set(store.mentions.map((m) => m.titleKey)) };
   const fresh: Mention[] = [];
   const reports: SourceReport[] = [];
@@ -144,9 +180,4 @@ export async function runMentions(config: MentionsConfig, store: Store, deps: { 
     mentions: [...fresh, ...store.mentions].slice(0, KEEP),
   };
   return { store: next, fresh, reports, committedMicros: spender.committedMicros, actualMicros: spender.actualMicros };
-}
-
-/** true when the planned run would take the month's spend past the monthly cap. Checked before any call. */
-export function overMonthlyCap(config: MentionsConfig, store: Store, plannedMicros: number, now: Date): boolean {
-  return (store.spend[monthKey(now)] ?? 0) + plannedMicros > config.monthlyCapMicros;
 }

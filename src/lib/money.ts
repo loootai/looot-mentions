@@ -8,6 +8,12 @@ export function toMicros(usd: number | string | null | undefined): number {
   return Number.isFinite(n) ? Math.round(n * MICROS) : 0;
 }
 
+/** Amounts: four decimals under one cent ($0.0010), two from one cent up ($0.21, $1.37). */
+export function usd(micros: number): string {
+  const v = micros / MICROS;
+  return `$${v.toFixed(Math.abs(v) < 0.01 && micros !== 0 ? 4 : 2)}`;
+}
+
 /** Amounts and quotes: at least four decimals under one dollar ($0.0152), two from one dollar up. */
 export function usdPrecise(micros: number): string {
   const v = micros / MICROS;

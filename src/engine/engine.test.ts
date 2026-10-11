@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DEMO_CONFIG, DEMO_NOW, fixtureRunner } from "@/demo/fixtures";
 import type { LoootRunner } from "@/lib/looot";
 import { renderDigest } from "./digest";
-import { dedupe, EMPTY_STORE, enrich, idempotencyKey, matchesKeyword, overMonthlyCap, planCalls, quoteOf, runMentions } from "./engine";
+import { dedupe, EMPTY_STORE, enrich, idempotencyKey, matchesKeyword, planCalls, quoteOf, REFRESH_MS, runMentions } from "./engine";
 import { FALLBACK_PRICES, parseInstagram, parseNews, parseReddit, parseSearch, parseTikTok, parseX, parseYoutube, SOURCES } from "./sources";
 import instagramFixture from "./fixtures/instagram-reels-search.json";
 import tiktokFixture from "./fixtures/tiktok-search-keyword.json";
@@ -15,10 +15,10 @@ describe("plan and quote", () => {
     expect(planCalls(DEMO_CONFIG)).toHaveLength(16);
     expect(quoteOf(DEMO_CONFIG, FALLBACK_PRICES).totalMicros).toBe(2 * (1880 + 750 + 1000 + 1000 + 1000 + 1880 + 1500 + 1000));
   });
-  it("keys the idempotency by input and day", () => {
+  it("keys the idempotency by input and refresh window, with no date in it", () => {
     const [c] = planCalls(DEMO_CONFIG);
-    expect(idempotencyKey(c, DEMO_NOW)).toBe(idempotencyKey(c, new Date("2026-10-10T23:00:00Z")));
-    expect(idempotencyKey(c, DEMO_NOW)).not.toBe(idempotencyKey(c, new Date("2026-10-11T00:00:00Z")));
+    expect(idempotencyKey(c, DEMO_NOW)).toBe(idempotencyKey(c, new Date(DEMO_NOW.getTime() + 3_600_000)));
+    expect(idempotencyKey(c, DEMO_NOW)).not.toBe(idempotencyKey(c, new Date(DEMO_NOW.getTime() + REFRESH_MS)));
     expect(idempotencyKey(c, DEMO_NOW)).not.toBe(idempotencyKey(planCalls(DEMO_CONFIG)[1], DEMO_NOW));
   });
 });
@@ -59,15 +59,6 @@ describe("runMentions", () => {
     const looot: LoootRunner = { runAndWait: async () => ({ runId: "r", status: "completed", result: {}, actualCost: "0.001" }) };
     const r = await run(EMPTY_STORE, { ...DEMO_CONFIG, sources: ["news"] }, { ...deps, looot });
     expect(r.store.spend["2026-10"]).toBe(2000);
-  });
-});
-
-describe("monthly cap", () => {
-  it("blocks a run that would pass the month's cap", () => {
-    const store = { ...EMPTY_STORE, spend: { "2026-10": 4_990_000 } };
-    expect(overMonthlyCap(DEMO_CONFIG, store, 20_000, DEMO_NOW)).toBe(true);
-    expect(overMonthlyCap(DEMO_CONFIG, store, 5_000, DEMO_NOW)).toBe(false);
-    expect(overMonthlyCap(DEMO_CONFIG, store, 20_000, new Date("2026-11-01T00:00:00Z"))).toBe(false);
   });
 });
 

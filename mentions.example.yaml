@@ -7,7 +7,8 @@ keywords:
 sources: [reddit, x, hn, news, youtube, tiktok, instagram, web]
 # Hard cap for one run. Searches that would pass it are skipped.
 maxSpendPerRunUsd: 0.25
-# The run stops before any call when this month's spend plus the plan would pass it.
+# Starting monthly budget in dollars. The owner changes the daily and monthly budget on the Costs page, or with
+# LOOOT_MENTIONS_DAILY_USD and LOOOT_MENTIONS_MONTHLY_USD. Calls stop when the budget is reached.
 monthlyCapUsd: 5
 # Mentions published longer ago than this are ignored.
 maxAgeDays: 14

@@ -3,13 +3,14 @@ import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { ConfigError, buildConfig, parseConfig } from "@/engine/config";
 import { renderDigest } from "@/engine/digest";
-import { EMPTY_STORE, overMonthlyCap, quoteOf, runMentions } from "@/engine/engine";
+import { EMPTY_STORE, payableMicros, quoteOf, runMentions } from "@/engine/engine";
 import { mergeRules } from "@/engine/rules";
 import { ALL_SOURCES, FALLBACK_PRICES, PRICES_AS_OF } from "@/engine/sources";
 import type { MentionsConfig, Store } from "@/engine/types";
 import { DEMO_CONFIG, DEMO_NOW, fixtureRunner } from "@/demo/fixtures";
+import { getBudget } from "@/lib/budgetService";
 import { LoootError, loootFromEnv } from "@/lib/looot";
-import { usdPrecise } from "@/lib/money";
+import { usd, usdPrecise } from "@/lib/money";
 import { fetchPrices } from "@/lib/prices";
 import { dayKey } from "@/lib/util";
 
@@ -26,10 +27,13 @@ Options:
   --data <file>          Every mention and the spend so far. Default: data/mentions.json
   --rules <file>         Sentiment and intent rules (JSON). Default: config/rules.json
   --max-spend <usd>      Cap for this run. Default 0.25 (or maxSpendPerRunUsd in the config).
+  --partial              Run until the cap or the period budget is reached, even when the quote is above what is left.
   --dry-run              Print the plan and the list-price cost. Make no call, write nothing.
   --help
 
-Needs LOOOT_TOKEN in the environment, except with --demo or --dry-run.`;
+Needs LOOOT_TOKEN in the environment, except with --demo or --dry-run.
+The period budget (daily and monthly) lives in .looot-data/budget.json (LOOOT_MENTIONS_DATA_DIR). LOOOT_MENTIONS_DAILY_USD and
+LOOOT_MENTIONS_MONTHLY_USD set the starting amounts (default 10 and 50) until the owner saves new ones in the web UI.`;
 
 function fail(message: string, code = 1): never {
   console.error(message);
@@ -41,7 +45,7 @@ function parse() {
     options: {
       config: { type: "string" }, keywords: { type: "string" }, demo: { type: "boolean", default: false }, sources: { type: "string" },
       out: { type: "string", default: "digests" }, data: { type: "string", default: "data/mentions.json" }, rules: { type: "string" },
-      "max-spend": { type: "string" }, "dry-run": { type: "boolean", default: false }, help: { type: "boolean", default: false },
+      "max-spend": { type: "string" }, "dry-run": { type: "boolean", default: false }, partial: { type: "boolean", default: false }, help: { type: "boolean", default: false },
     },
   }).values;
 }
@@ -78,7 +82,7 @@ async function main(): Promise<void> {
   const live = !args.demo && !args["dry-run"];
   const priced = live ? await fetchPrices(FALLBACK_PRICES) : { prices: FALLBACK_PRICES, source: "fallback" as const, unread: [] as string[] };
   const quote = quoteOf(config, priced.prices);
-  console.log(`Plan: ${config.keywords.length} keyword(s) on ${config.sources.length} source(s), ${quote.calls.length} calls, list price ${usdPrecise(quote.totalMicros)} (${priced.source === "catalog" ? "live catalog prices" : `list prices dated ${PRICES_AS_OF}`}). Cap ${usdPrecise(config.maxSpendPerRunMicros)} a run, ${usdPrecise(config.monthlyCapMicros)} a month.`);
+  console.log(`Plan: ${config.keywords.length} keyword(s) on ${config.sources.length} source(s), ${quote.calls.length} calls, list price ${usdPrecise(quote.totalMicros)} (${priced.source === "catalog" ? "live catalog prices" : `list prices dated ${PRICES_AS_OF}`}). Cap ${usdPrecise(config.maxSpendPerRunMicros)} a run, then the period budget.`);
   for (const l of quote.lines) console.log(`  ${String(l.calls).padStart(3)} x ${l.endpointId} (${l.provider})  ${usdPrecise(l.priceMicros)}`);
   if (quote.totalMicros > config.maxSpendPerRunMicros) console.log("The plan is over the run cap. Calls that do not fit are skipped.");
   if (args["dry-run"]) return console.log("Dry run: no looot call was made and nothing was written.");
@@ -95,11 +99,20 @@ async function main(): Promise<void> {
   const dataPath = resolve(args.data);
   const store: Store = existsSync(dataPath) ? (JSON.parse(readFileSync(dataPath, "utf8")) as Store) : { ...EMPTY_STORE, spend: {}, mentions: [] };
   const now = args.demo ? DEMO_NOW : new Date();
-  if (overMonthlyCap(config, store, Math.min(quote.totalMicros, config.maxSpendPerRunMicros), now)) {
-    fail(`The monthly cap of ${usdPrecise(config.monthlyCapMicros)} would be passed. Nothing ran. Raise monthlyCapUsd to continue.`, 3);
+  // Check order: the quote (above), the cap per run, the period budget, then the calls. Runs that ended since last time settle first.
+  let ledger: ReturnType<typeof getBudget> | undefined;
+  if (!args.demo) {
+    ledger = getBudget();
+    if ("getRun" in looot) await ledger.reconcile(looot as unknown as Parameters<typeof ledger.reconcile>[0], now).catch(() => undefined);
+    const room = await ledger.status(now);
+    console.log(`Budget left: ${usd(room.remainingMicros)} (${usd(room.day.remainingMicros)} today, ${usd(room.month.remainingMicros)} this month, ${usd(room.day.reservedMicros)} reserved).`);
+    const toCharge = Math.min(await payableMicros(quote.calls, ledger, now, priced.prices), config.maxSpendPerRunMicros);
+    if (toCharge > room.remainingMicros && !args.partial) {
+      fail("Refused: the quote is above what is left of the period budget. Nothing ran. Wait for the period to roll over, raise the budget on the Costs page of the web UI, or pass --partial to run until it is reached.", 3);
+    }
   }
   const rules = args.rules ? mergeRules(JSON.parse(readFileSync(resolve(args.rules), "utf8"))) : undefined;
-  const result = await runMentions(config, store, { looot, prices: priced.prices, unpriced: new Set(priced.unread), now, rules });
+  const result = await runMentions(config, store, { looot, prices: priced.prices, unpriced: new Set(priced.unread), now, rules, ledger });
 
   mkdirSync(dirname(dataPath), { recursive: true });
   writeFileSync(dataPath, `${JSON.stringify(result.store)}\n`);
@@ -111,6 +124,8 @@ async function main(): Promise<void> {
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, digest);
 
   console.log(digest);
+  const stopped = result.reports.find((r) => r.status === "skipped_budget");
+  if (stopped) console.log(`${result.reports.filter((r) => r.status === "skipped_budget").length} calls skipped. ${stopped.error}`);
   console.log(`Digest: ${digestPath}\nData: ${dataPath}`);
   if (result.reports.length > 0 && result.reports.every((r) => r.status === "failed")) fail("Every call failed. See the digest for the errors.");
 }

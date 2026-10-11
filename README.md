@@ -85,7 +85,7 @@ cp .env.example .env.local        # web UI only. For the CLI, export the variabl
 cp mentions.example.yaml mentions.yaml
 ```
 
-Edit `mentions.yaml`: your brand and competitors as `keywords`, plus the optional `exclude` words, `sources`, `maxSpendPerRunUsd`, `monthlyCapUsd` and `maxAgeDays`. The file ships with invented names (Tallyroom, Ledgerly).
+Edit `mentions.yaml`: your brand and competitors as `keywords`, plus the optional `exclude` words, `sources`, `maxSpendPerRunUsd` and `maxAgeDays`. `monthlyCapUsd` still works as the starting monthly budget (see [Spending](#spending)). The file ships with invented names (Tallyroom, Ledgerly).
 
 Every environment variable the code reads:
 
@@ -97,7 +97,10 @@ Every environment variable the code reads:
 | `MENTIONS_ADMIN_PASSWORD_HASH` | No | Instead of the plain password: the output of `npm run hash-password -- 'your password'`. Wins if both are set. | `npm run hash-password`. |
 | `MENTIONS_SESSION_SECRET` | No | Key that signs session cookies. Default: derived from the password, so a new password signs everyone out. | Your choice. |
 | `MENTIONS_COOKIE_SECURE` | No | `0` drops the Secure flag on the cookie, only to test production mode over plain http. | Leave unset. |
-| `MENTIONS_CONFIG` | No | Config file the web UI reads its spend caps from. Default `mentions.yaml`. | Your choice. |
+| `MENTIONS_CONFIG` | No | Config file the web UI reads its cap per run from. Default `mentions.yaml`. | Your choice. |
+| `LOOOT_MENTIONS_DAILY_USD` | No | Starting daily budget in dollars, until the owner saves one on the Costs page. Default 10. | A dollar amount you choose. |
+| `LOOOT_MENTIONS_MONTHLY_USD` | No | Starting monthly budget in dollars. Default 50, or `monthlyCapUsd` from the config file when it sets one. | A dollar amount you choose. |
+| `LOOOT_MENTIONS_DATA_DIR` | No | Folder of the budget file `budget.json`. Default `.looot-data`. Keep it on a disk that persists. | Your choice. |
 | `MENTIONS_DATA` | No | File the web UI reads and writes. Default `data/mentions.json`. The CLI uses `--data` instead. | Your choice. |
 | `NEXT_PUBLIC_DEMO` | No | `1` switches the web UI to sample data. `npm run demo` sets it. | Set by the script. |
 | `GITHUB_STEP_SUMMARY` | No | Set by GitHub Actions. The CLI appends the digest to it. | Set by GitHub. |
@@ -106,7 +109,7 @@ Price the run first. This reads the free public catalog for live prices when it 
 
 ```
 $ npm run mentions -- --config mentions.yaml --dry-run
-Plan: 2 keyword(s) on 8 source(s), 16 calls, list price $0.02002 (list prices dated 2026-10-10). Cap $0.2500 a run, $5.00 a month.
+Plan: 2 keyword(s) on 8 source(s), 16 calls, list price $0.02002 (list prices dated 2026-10-10). Cap $0.2500 a run, then the period budget.
     2 x scrapecreators-reddit-search (Scrape Creators)  $0.00188
     2 x anyapi-run-twitter-search (AnyAPI)  $0.00075
     4 x serper-search (Serper)  $0.0010
@@ -124,7 +127,7 @@ export LOOOT_TOKEN=...
 npm run mentions -- --config mentions.yaml
 ```
 
-Options: `--keywords "Acme,Acme Pro"` instead of a config file, `--sources reddit,news`, `--out digests`, `--data data/mentions.json`, `--rules config/rules.json`, `--max-spend <usd>`.
+Options: `--keywords "Acme,Acme Pro"` instead of a config file, `--sources reddit,news`, `--out digests`, `--data data/mentions.json`, `--rules config/rules.json`, `--max-spend <usd>`, `--partial`.
 
 Results go to two places. `digests/YYYY-MM-DD.md` holds the new mentions, and a second run on the same day appends to it. `data/mentions.json` holds every mention seen and the spend per month. `data/` is gitignored; `digests/` is not.
 
@@ -132,13 +135,21 @@ Web UI on your data: `npm run dev`, then open http://localhost:3000. It reads `d
 
 ## Spending
 
-- Every paid action shows a quote first. The CLI quotes with `--dry-run` and prints the same plan before a real run. The Run page shows the quote before its search button appears. The quote carries a signed token tied to your session, the keywords and the caps, and the run route takes the confirmed maximum from that token, not from the request body. A session may start 5 runs per 10 minutes.
-- The run cap is `--max-spend` or `maxSpendPerRunUsd` in the config. The default is $0.25. The web UI reads the same value from `mentions.yaml` on the server and ignores any cap sent in a request. A call that would pass the cap is skipped and never sent.
-- The month cap is `monthlyCapUsd`. The default is $5. The CLI checks it before the run starts, from the spend recorded in `data/mentions.json`, and stops with exit code 3 if the plan would pass it.
+looot shows the price before each paid action, and so does this repo. Four limits stand between a request and a charge, checked in this order: the quote, the cap per run, the period budget, then the call.
+
+- The quote comes first. The CLI quotes with `--dry-run` and prints the same plan before a real run. The Run page shows the quote before its search button appears. The quote carries a signed token tied to your session, the keywords and the caps, and the run route takes the confirmed maximum from that token, not from the request body. A session may start 5 runs per 10 minutes.
+- The cap per run is `--max-spend` or `maxSpendPerRunUsd` in the config. The default is $0.25. The web UI reads the same value from `mentions.yaml` on the server and ignores any cap sent in a request. A call that would pass the cap is skipped and never sent.
+- The period budget caps all runs together: a daily and a monthly amount (UTC), $10 and $50 until you change them. The owner changes them on the Costs page of the web UI, or sets the starting values with `LOOOT_MENTIONS_DAILY_USD` and `LOOOT_MENTIONS_MONTHLY_USD`. An older `monthlyCapUsd` in the config file is still the starting monthly budget. A request to `/api/run` cannot carry a budget: one with a budget field is refused with 400 and nothing is called. The CLI refuses a run whose chargeable quote is above what is left (exit code 3) unless you pass `--partial`, which runs until the budget is reached.
+- Before each paid call the app reserves its list price in `budget.json` (in `LOOOT_MENTIONS_DATA_DIR`, default `.looot-data`), under a lock file, and skips the call if used plus reserved plus the price would pass the daily or the monthly budget. Two runs started together cannot both pass. When the call ends the reservation becomes the real charge. A call that looot refused with an HTTP answer releases it. A call still running at looot (`pending`) keeps its reservation: it is never recorded as failed at $0 and the budget is never handed back early.
+- The next run looks up every pending call with `GET /v1/runs/{id}` and settles the ones that ended, to their real cost. If looot cannot be reached, or the app died before it got a run id, the reservation stays for 24 hours and is then released.
+- The sidebar and the Costs page show used, reserved and remaining for today and this month. At the budget the run is refused with a message that names the limit.
+- Every call has a stable idempotency key made from the source, the endpoint and the normalised input (lower case, trimmed). No date or time goes in, and no call input carries one (the searches use the relative windows `week` and `qdr:w`). Results are reused for a refresh window of 24 hours (`floor(time / 24 hours)` is part of the key). A finished call is stored in `budget.json`, so repeating the same request inside the window is answered from the stored result: no call, no charge, and the up-front budget check ignores it. The first run in a new window is an explicit new request with its own key, which is how a daily run finds new mentions.
 - A typical run is one keyword on all eight sources at list price, $0.01001. Two keywords cost $0.02002. Three keywords daily cost about $0.03003 a day, about $0.90 a month.
-- Each call carries an idempotency key made from the keyword, the call input, the endpoint and the day. A second run on the same day replays the stored run and charges nothing more.
 - A call still going when waiting stops (60 seconds) is "pending", not "failed", and the digest says so.
 - Failed calls are not charged by looot.
+- The looot token balance is the final limit. Fund a dedicated token with only what you are willing to spend, and keep the budget below it.
+
+The budget lives in a file, so run one instance on a disk that persists. Several instances, or a serverless host with a throwaway disk, do not share it. The daily GitHub Action keeps it in `data/` next to the mentions and commits both.
 
 ## Deploy
 
@@ -153,7 +164,7 @@ This app has no Supabase and no `vercel.json`. The web UI stores its data in a l
 3. Optional: set the repository variable `MENTIONS_CONFIG` (same page, Variables tab) to use a config file other than `mentions.yaml`.
 4. Run it once. Open the Actions tab, pick "mentions", click "Run workflow" and tick `dry_run` to see the cost. Or from a terminal, `gh workflow run mentions.yml -f dry_run=true`. Run it again with `dry_run` off for a real run.
 
-Until the secret exists the job ends with a notice ("LOOOT_TOKEN is not set, so nothing ran.") and spends nothing. The workflow passes `actionlint` 1.7.12. The caps in the config file apply, so a run never passes `maxSpendPerRunUsd` and the job stops before any call when the month's spend would pass `monthlyCapUsd`.
+Until the secret exists the job ends with a notice ("LOOOT_TOKEN is not set, so nothing ran.") and spends nothing. The workflow passes `actionlint` 1.7.12. The cap per run applies, and so does the period budget: the job keeps `budget.json` in `data/` and commits it with the mentions, so the daily and monthly amounts carry over from one run to the next.
 
 ## Securing a deployment
 
@@ -167,8 +178,8 @@ Pages and routes were listed from `src/app` and classified. A test reads the fol
 | --- | --- | --- |
 | Public by design | 4 routes | `/login`, `/api/auth/login`, `/api/auth/logout`, `/api/health` |
 | Public static files | 2 | `/brand/*`, `/favicon.ico` |
-| Admin pages | 3 | `/` (feed), `/digest`, `/run` |
-| Admin API | 2 | `/api/quote` (free, calls the public catalog), `/api/run` (paid looot run) |
+| Admin pages | 4 | `/` (feed), `/digest`, `/run`, `/costs` (budget and cost) |
+| Admin API | 3 | `/api/quote` (free, calls the public catalog), `/api/run` (paid looot run), `/api/budget` (read, and change the period budget) |
 
 There are no server actions, no webhooks and no export routes. Any path not listed is treated as admin.
 
@@ -185,7 +196,8 @@ There are no server actions, no webhooks and no export routes. Any path not list
 
 ### Spending routes
 
-- The caps come from `mentions.yaml` on the server (`maxSpendPerRunUsd`, `monthlyCapUsd`), or the file named by `MENTIONS_CONFIG`. Defaults are $0.25 a run and $5 a month. The request cannot set them. `maxSpendPerRunUsd` and `confirmedMaxUsd` in a request body are ignored.
+- The cap per run comes from `mentions.yaml` on the server (`maxSpendPerRunUsd`), or the file named by `MENTIONS_CONFIG`. The default is $0.25 a run. The request cannot set it. `maxSpendPerRunUsd`, `confirmedMaxUsd` and any other cap in a request body are ignored.
+- The period budget (`PUT /api/budget`) is changed only by the signed-in owner, with the CSRF token. A run request cannot raise it, and one that carries a budget field is refused with 400. See [Spending](#spending). The budget file needs one instance on a persistent disk. The looot token balance is the final limit, so give the app a token funded with only what you are willing to spend.
 - `/api/run` needs the signed quote token from `/api/quote`, valid for 10 minutes, for the same session and the same keywords, sources and caps. If the live price moved above the quoted total, it answers 409 and runs nothing.
 - Per session: 5 runs and 30 quotes per 10 minutes. Over that, HTTP 429.
 
@@ -216,12 +228,13 @@ No per-user accounts, no roles, no audit of who signed in. The app has one admin
 | `Get a quote first.` (HTTP 409 from the Run page) | The quote is older than 10 minutes, belongs to another session, or the keywords changed after it. | Press "Get a quote" again. |
 | `LOOOT_TOKEN is not set on the server.` (HTTP 503 from the Run page) | The web server started without the token. | Put `LOOOT_TOKEN` in `.env.local` and restart `npm run dev`. |
 | `looot returned HTTP 401`, or the message looot sends back, in the digest under "Sources that did not answer" as `failed (...)` | The token is wrong, revoked or missing a scope. | Create a new token with the four scopes listed above. |
-| `looot returned HTTP 402`, or the message looot sends back | The balance may be too low. The code shows whatever looot returns and does not interpret it. | Top up at https://docs.looot.ai/money (minimum $5), then run again. The idempotency key replays finished calls for free. |
+| `looot returned HTTP 402`, or the message looot sends back | The balance may be too low. The code shows whatever looot returns and does not interpret it. | Top up at https://docs.looot.ai/money (minimum $5), then run again. The stored result and the idempotency key replay finished calls for free. |
 | `failed (blocked)` or `failed (stopped)`, or the run's own error message | looot blocked or stopped the run. | Open the run in the looot web app and read the reason. |
-| `still running at looot, not failed`, with `Still running when waiting stopped. Read run <runId> later.` | The provider took longer than 60 seconds. | Not a failure. Look the run up in looot by its id, or run again later. The same-day idempotency key returns the stored run. |
+| `still running at looot, not failed`, with `Still running when waiting stopped. Read run <runId> later.` | The provider took longer than 60 seconds. | Not a failure. Look the run up in looot by its id, or run again later. Its budget stays reserved, the next run settles it, and the stored run is replayed and not charged twice. |
 | `The live price could not be read.` | The catalog price for that endpoint was unreadable, so the call was skipped. | Run again later. |
 | `The spend cap would be passed.` | The call was skipped because it would pass the run cap. | Raise `--max-spend` or `maxSpendPerRunUsd`. |
-| `The monthly cap of $5.00 would be passed. Nothing ran. Raise monthlyCapUsd to continue.` (exit code 3) | This month's spend plus the plan passes the cap. | Raise `monthlyCapUsd` or wait for the next month. |
+| `Refused: the quote is above what is left of the period budget.` (CLI exit code 3), or HTTP 402 `The quote ... is above what is left of the budget` from the Run page | The plan costs more than the daily or monthly budget has left. | Raise the budget on the Costs page, wait for the period to roll over, or pass `--partial` in the CLI. |
+| `The daily budget is reached: ...` or `The monthly budget is reached: ...` | A call was skipped because used plus reserved plus its price would pass the budget. | Raise the budget on the Costs page, or wait for the period to roll over. |
 | A source shows 0 mentions and no error | The provider answered in a shape the parser does not recognise. The parsers do not raise an error for that; they return nothing. | Open an issue with the raw response (see below). |
 | `Every call failed. See the digest for the errors.` | All calls in the run failed. | Read the errors in the digest. |
 | `No config at <file>` | The path after `--config` does not exist. | Copy `mentions.example.yaml` and check the path. |

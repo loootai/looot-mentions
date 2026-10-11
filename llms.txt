@@ -14,7 +14,7 @@ Full steps are in README.md under "What you need", "Try it in one minute" and "R
 
 ## Rules
 - Always run `--dry-run` first and show the list-price cost to the user.
-- The per-run cap (maxSpendPerRunUsd) and the monthly cap (monthlyCapUsd) are enforced before calls are sent.
+- The per-run cap (maxSpendPerRunUsd) and the owner's daily and monthly period budget are enforced before calls are sent. Each call reserves its list price in budget.json first.
 - A source marked "still running at looot" is pending, not failed.
 - Sentiment and intent come from word lists in config/rules.json. Each mention shows the words that produced its label.
 

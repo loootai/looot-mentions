@@ -39,18 +39,16 @@ describe("mentions CLI", () => {
     expect(r.status).toBe(2);
     expect(r.stderr).toContain("LOOOT_TOKEN is not set");
   });
-  it("stops when the monthly cap would be passed", () => {
+  it("reads a data file from before the period budget, with its old month-by-month spend, without a crash", () => {
     const d = tmp();
     const r = run(["--demo", "--out", d, "--data", join(d, "m.json")]);
     expect(r.status).toBe(0);
-    // Demo runs charge $0, so fake a month of spend in the data file and run again on another day's data path.
     const p = join(d, "m.json");
     const s = JSON.parse(readFileSync(p, "utf8"));
     s.spend["2026-10"] = 4_999_000;
     writeFileSync(p, JSON.stringify(s));
-    const capped = run(["--demo", "--out", d, "--data", p]);
-    expect(capped.status).toBe(3);
-    expect(capped.stderr).toContain("monthly cap");
+    const again = run(["--demo", "--out", d, "--data", p]);
+    expect(again.status).toBe(0);
   });
   it("rejects an unknown source", () => {
     const r = run(["--keywords", "Acme", "--sources", "myspace", "--dry-run"]);
