@@ -1,4 +1,6 @@
-<p align="center"><img src="assets/hero.png" alt="looot-mentions" width="100%"></p>
+![looot-mentions: the feed and the cost quote of a live run on 2026-10-13, listening for looot, Clay alternatives, Apollo.io and Apify](docs/media/banner.png)
+
+Logos and names belong to their owners. Public data from a live run on 2026-10-13. No affiliation.
 
 # looot-mentions
 
@@ -7,6 +9,56 @@
 Brand and keyword listening in the open. Give it keywords and brand names. It searches Reddit, X, Hacker News, news, YouTube, TikTok, Instagram and the web through [looot](https://looot.ai), removes duplicates, tags each mention by source, sentiment and intent, and shows a feed with filters and a daily digest. A headless CLI writes only what is new since the last run to markdown, so it runs from a daily GitHub Actions cron.
 
 An open-source alternative to Brand24 and Mention. On 2026-10-10 Brand24 listed $249 a month for its Individual plan ($199 billed yearly). Mention's pricing page showed no figure. Here one keyword on all eight sources costs about $0.0100 per run, so 3 keywords daily is about $0.90 a month.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/media/card-feed.png" alt="One feed for every place your brand comes up, with keyword, source, sentiment and intent filters"></td>
+<td width="50%"><img src="docs/media/card-comparisons.png" alt="The Comparison filter: 16 pages that set Clay next to other tools"></td>
+</tr>
+<tr>
+<td><img src="docs/media/card-digest.png" alt="A digest that leads with what needs a reply"></td>
+<td><img src="docs/media/card-quote.png" alt="The cost quote before a run: 32 searches, at most $0.04004"></td>
+</tr>
+<tr>
+<td><img src="docs/media/card-costs.png" alt="The Costs page: a cap per run and a daily and monthly budget"></td>
+<td><img src="docs/media/card-actions.png" alt="The GitHub Actions workflow that runs every morning"></td>
+</tr>
+</table>
+
+The banner, the cards and the walkthrough are screenshots of the web UI running on the data of a live paid run on 2026-10-13 (see [Live run](#live-run) below). Authors and handles are hidden in every image, and a few rows with a private person's name or a personal post were hidden too, so the counts on the page are a little higher than the rows you see. The cards say "Live run · 2026-10-13".
+
+![A 26-second walkthrough: the feed, a filter, the digest, the quote and the costs page](docs/media/demo.gif)
+
+The same walkthrough as MP4: [docs/media/demo.mp4](docs/media/demo.mp4).
+
+## Live run
+
+I pointed the CLI at looot's own market on 2026-10-13: the brand "looot" and the competitors "Clay alternative" (searched as "alternative to Clay" in a second run), "Apollo.io" and "Apify". Config: 4 keywords, all 8 sources, a $0.10 cap per run, 30 days.
+
+| | First run | Second run |
+|---|---|---|
+| Keywords | looot, Clay alternative, Apollo.io, Apify | alternative to Clay |
+| Calls sent | 32 | 5 (Reddit, X, Hacker News, YouTube, web) |
+| Calls that answered | 14 | 5 |
+| Charged by looot | $0.01642 | $0.00548 |
+| Mentions kept | 33 | 11 |
+
+Total: 37 calls, $0.0219 charged, 44 unique mentions. The quote for the full plan was $0.04004 (32 calls), so the two runs cost about half of that because 18 calls never ran.
+
+What worked:
+
+- Reddit, web and TikTok gave most of the mentions. The best ones are real comparison pages and a Reddit thread asking for an open-source alternative to Clay.
+- Hacker News gave 1 mention, and it is off topic.
+- The `looot` keyword matches the elongated word in "a looot of fun", a board game and a fika post. 12 of the 44 mentions are for that keyword, and only a few are about looot. Use a more specific brand term or an `exclude` list for a name like that.
+- Sentiment is mostly neutral (35 of 44) and 0 are negative. The word-list labels are a first pass.
+
+What did not work:
+
+- 18 of the 32 first-run calls failed. 16 of them were refused by looot with "Too many runs are in flight for this workspace", because several runs shared the workspace at the same moment. They cost nothing. 2 News calls were rejected by the provider with "Query pattern not allowed for free accounts".
+- Because of that, X, YouTube, Instagram and News returned nothing for most keywords, so those four parsers are still unverified against a real answer. TikTok, Reddit and web parsers are now checked against real responses.
+- A call rejected with `too_many_inflight` is replayed on a re-run with the same idempotency key, so the same call stays rejected for the refresh window. The app reports it as "still running at looot" and keeps its price reserved, which is why the Costs page shows $0.02 reserved. Changing the keyword text (the second run) made a new key and the calls went through. This needs a fix in the spender, which I did not make here.
+
+Costs and the prices come from the looot catalog read on the day. Logos and names belong to their owners. Public data from a live run on 2026-10-13. No affiliation.
 
 ![Feed](docs/screenshots/feed-light.png)
 
@@ -245,7 +297,7 @@ Open an issue at https://github.com/loootai/looot-mentions/issues with the run i
 
 ## Status
 
-No paid looot run was made. The code and fixtures follow the endpoint descriptions in the looot catalog and the parsers of the sibling repo [looot-monitor](https://github.com/loootai/looot-monitor). The Reddit, X, news and Google parsers reuse shapes from that repo. The YouTube parser searches the response for a list of videos because the exact nesting is not documented, and it is built from a hand-written fixture, so expect to adjust field names after your first real run. In the code, Hacker News and Web are marked `shapeVerified: true` (they use the pinned `serper-search` shape) and Reddit, X, news, YouTube, TikTok and Instagram are `false`. The TikTok parser follows the response the catalog documents for `scrapecreators-tiktok-search-keyword`, and its fixture is `src/engine/fixtures/tiktok-search-keyword.json`. The Instagram reels entry documents no fields, so that parser tries several names against a hand-written fixture. If a parser fails on a real response, open an issue with the raw response.
+A first paid run was made on 2026-10-13 (see [Live run](#live-run)). The code and fixtures follow the endpoint descriptions in the looot catalog and the parsers of the sibling repo [looot-monitor](https://github.com/loootai/looot-monitor). The Reddit, X, news and Google parsers reuse shapes from that repo. The YouTube parser searches the response for a list of videos because the exact nesting is not documented, and it is built from a hand-written fixture, so expect to adjust field names after your first real run. In the code, Hacker News and Web are marked `shapeVerified: true` (they use the pinned `serper-search` shape) and Reddit, X, news, YouTube, TikTok and Instagram are `false`. The TikTok parser follows the response the catalog documents for `scrapecreators-tiktok-search-keyword`, and its fixture is `src/engine/fixtures/tiktok-search-keyword.json`. The Instagram reels entry documents no fields, so that parser tries several names against a hand-written fixture. If a parser fails on a real response, open an issue with the raw response.
 
 Sentiment by word list misses sarcasm and reads "recommend a tool" as neutral on purpose. Treat labels as a first pass: the feed shows the matched words so you can check each one. The GitHub Actions workflow was linted but not run, because it needs a repository secret. All demo brands are invented.
 
