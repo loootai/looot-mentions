@@ -91,6 +91,12 @@ describe("sign in", () => {
     const res = await login(post("/api/auth/login", { password: PW }, { origin: "https://evil.example" }));
     expect(res.status).toBe(403);
   });
+  it("accepts the browser's 'Origin: null' form post when Sec-Fetch-Site says same-origin, and refuses it otherwise", async () => {
+    const ok = await login(post("/api/auth/login", { password: PW }, { origin: "null", "sec-fetch-site": "same-origin" }));
+    expect(ok.status).toBe(200);
+    expect((await login(post("/api/auth/login", { password: PW }, { origin: "null", "sec-fetch-site": "cross-site" }))).status).toBe(403);
+    expect((await login(post("/api/auth/login", { password: PW }, { origin: "null" }))).status).toBe(403);
+  });
   it("sign out clears the cookie, and only for a same-site request", async () => {
     const ok = await logout(post("/api/auth/logout", {}));
     expect(ok.headers.get("set-cookie")).toMatch(/Max-Age=0/);

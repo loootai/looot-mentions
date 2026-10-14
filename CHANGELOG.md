@@ -2,6 +2,10 @@
 
 Built from the GitHub release notes. Each version links to its release page.
 
+## Unreleased
+
+- Fix: the sign-in form could not be used in a browser. Chrome sends `Origin: null` for a same-origin form post under `Referrer-Policy: no-referrer`, and the same-origin check refused it with 403. The check now falls back to `Sec-Fetch-Site` for `null`.
+
 ## 0.1.6 (2026-10-11)
 
 Spend limits, version 2. Before this, the only limit across runs was `monthlyCapUsd`, checked before a run and written after it. Two runs started together both passed, a run still going at looot counted as $0, and the idempotency key carried the day, so a repeat on a new day paid again.
